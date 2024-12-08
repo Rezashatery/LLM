@@ -12,4 +12,4 @@ of language to train models on understanding context, structure, and relationshi
 within text. LLMs utilize an architecture called the transformer, which allows them to pay selective attention to different parts of the input when making predictions, making them
 especially adept at handling the nuances and complexities of human language.
 
-![alt text](https://github.com/[Rezashatery]/[LLM]/blob/[branch]/image1.png?raw=true)
+![alt text](https://github.com/[Rezashatery]/[LLM]/blob/[Main]/image1.png?raw=true)
