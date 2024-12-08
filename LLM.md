@@ -74,3 +74,20 @@ dataset that is more specific to particular tasks or domains. This two-stage tra
 approach consisting of pretraining and fine-tuning is depicted in figure below.
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image2.png?raw=true)
+
+**NOTE** Readers with a background in machine learning may note that label-
+ing information is typically required for traditional machine learning models
+and deep neural networks trained via the conventional supervised learning
+paradigm. However, this is not the case for the pretraining stage of LLMs. In
+this phase, LLMs use self-supervised learning, where the model generates its
+own labels from the input data.
+This first training stage of an LLM is also known as pretraining, creating an initial pre-
+trained LLM, often called a base or foundation model. A typical example of such a model
+is the GPT-3 model. After obtaining a pretrained LLM from training on large text datasets, where the LLM is trained to predict the next word in the text, we can further train the LLM on
+labeled data, also known as fine-tuning.
+The two most popular categories of fine-tuning LLMs are instruction fine-tuning and
+classification fine-tuning. In instruction fine-tuning, the labeled dataset consists of
+instruction and answer pairs, such as a query to translate a text accompanied by the
+correctly translated text. In classification fine-tuning, the labeled dataset consists of
+texts and associated class labels—for example, emails associated with “spam” and “not
+spam” labels.
