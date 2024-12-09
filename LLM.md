@@ -278,3 +278,209 @@ of the model’s hidden states) varies based on the specific model variant and s
 is a tradeoff between performance and efficiency. The smallest GPT-2 models (117M
 and 125M parameters) use an embedding size of 768 dimensions to provide con-
 crete examples.
+
+
+
+## Tokenizing text
+Let’s discuss how we split input text into individual tokens, a required preprocessing
+step for creating embeddings for an LLM. These tokens are either individual words or
+special characters, including punctuation characters, as shown in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image11.png?raw=true)
+
+The text we will tokenize for LLM training is “The Verdict,” a short story by Edith
+Wharton, which has been released into the public domain and is thus permitted to be
+used for LLM training tasks. The text is available on Wikisource at https://en.wikisource
+.org/wiki/The_Verdict, and you can copy and paste it into a text file, which I copied
+into a text file "the-verdict.txt" in this repository.
+
+```python
+import urllib.request
+url = ("https://raw.githubusercontent.com/rasbt/"
+"LLMs-from-scratch/main/ch02/01_main-chapter-code/"
+"the-verdict.txt")
+file_path = "the-verdict.txt"
+urllib.request.urlretrieve(url, file_path)
+```
+Next, we can load the the-verdict.txt file using Python’s standard file reading utilities.
+```python
+with open("the-verdict.txt", "r", encoding="utf-8") as f:
+raw_text = f.read()
+print("Total number of character:", len(raw_text))
+print(raw_text[:99])
+```
+
+The print command prints the total number of characters followed by the first 100
+characters of this file for illustration purposes:
+```python
+Total number of character: 20479
+I HAD always thought Jack Gisburn rather a cheap genius-though a good fellow
+enough-so it was no
+```
+
+Our goal is to tokenize this 20,479-character short story into individual words and spe-
+cial characters that we can then turn into embeddings for LLM training.
+
+**NOTE**
+It’s common to process millions of articles and hundreds of thousands
+of books—many gigabytes of text—when working with LLMs. However, for
+educational purposes, it’s sufficient to work with smaller text samples like a
+single book to illustrate the main ideas behind the text processing steps and
+to make it possible to run it in a reasonable time on consumer hardware.
+
+How can we best split this text to obtain a list of tokens? For this, we go on a small
+excursion and use Python’s regular expression library re for illustration purposes.
+```python
+import re
+text = "Hello, world. This, is a test."
+result = re.split(r'(\s)', text)
+print(result)
+```
+
+Result: 
+['Hello,', ' ', 'world.', ' ', 'This,', ' ', 'is', ' ', 'a', ' ', 'test.']
+
+This simple tokenization scheme mostly works for separating the example text into
+individual words; however, some words are still connected to punctuation characters
+that we want to have as separate list entries.
+We also refrain from making all text lowercase because capitalization helps LLMs distinguish between proper nouns and common nouns, understand sentence structure, and learn to generate text with proper capitalization.
+
+Let’s modify the regular expression splits on whitespaces (\s), commas, and peri-
+ods ([,.]):
+```python
+result = re.split(r'([,.]|\s)', text)
+print(result)
+```
+Result: 
+['Hello', ',', '', ' ', 'world', '.', '', ' ', 'This', ',', '', ' ', 'is',
+' ', 'a', ' ', 'test', '.', '']
+
+A small remaining problem is that the list still includes whitespace characters. Option-
+ally, we can remove these redundant characters safely as follows:
+
+```python
+result = [item for item in result if item.strip()]
+print(result)
+```
+Result: ['Hello', ',', 'world', '.', 'This', ',', 'is', 'a', 'test', '.']
+
+**NOTE**
+When developing a simple tokenizer, whether we should encode
+whitespaces as separate characters or just remove them depends on our appli-
+cation and its requirements. Removing whitespaces reduces the memory and
+computing requirements. However, keeping whitespaces can be useful if we
+train models that are sensitive to the exact structure of the text (for example,
+Python code, which is sensitive to indentation and spacing). Here, we remove
+whitespaces for simplicity and brevity of the tokenized outputs. Later, we will
+switch to a tokenization scheme that includes whitespaces.
+
+Let’s
+modify it a bit further so that it can also handle other types of punctuation, such as ques-
+tion marks, quotation marks, and the double-dashes we have seen earlier in the first 100
+characters of Edith Wharton’s short story, along with additional special characters:
+```python
+text = "Hello, world. Is this-- a test?"
+result = re.split(r'([,.:;?_!"()\']|--|\s)', text)
+result = [item.strip() for item in result if item.strip()]
+print(result)
+```
+Result: ['Hello', ',', 'world', '.', 'Is', 'this', '--', 'a', 'test', '?']
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image12.png?raw=true)
+
+Now that we have a basic tokenizer working, let’s apply it to Edith Wharton’s entire
+short story:
+```python
+preprocessed = re.split(r'([,.:;?_!"()\']|--|\s)', raw_text)
+preprocessed = [item.strip() for item in preprocessed if item.strip()]
+print(len(preprocessed))
+```
+first 30 tokens for a quick visual check:
+['I', 'HAD', 'always', 'thought', 'Jack', 'Gisburn', 'rather', 'a',
+'cheap', 'genius', '--', 'though', 'a', 'good', 'fellow', 'enough',
+'--', 'so', 'it', 'was', 'no', 'great', 'surprise', 'to', 'me', 'to',
+'hear', 'that', ',', 'in']
+
+## Converting tokens into token IDs
+Next, let’s convert these tokens from a Python string to an integer representation to
+produce the token IDs. This conversion is an intermediate step before converting the
+token IDs into embedding vectors.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image13.png?raw=true)
+
+We build a vocabulary by tokenizing the entire text in a training dataset into individual
+tokens. These individual tokens are then sorted alphabetically, and duplicate tokens are removed. The unique tokens are then aggregated into a vocabulary that defines a mapping from each unique token to a unique integer value. The depicted vocabulary is purposefully small and contains no punctuation or special characters for simplicity.
+
+Now that we have tokenized Edith Wharton’s short story and assigned it to a Python
+variable called preprocessed, let’s create a list of all unique tokens and sort them
+alphabetically to determine the vocabulary size:
+```python
+all_words = sorted(set(preprocessed))
+vocab_size = len(all_words)
+print(vocab_size)
+```
+After determining that the vocabulary size is 1,130 via this code, we create the vocabu-
+lary and print its first 51 entries for illustration purposes.
+
+```python
+vocab = {token:integer for integer,token in enumerate(all_words)}
+for i, item in enumerate(vocab.items()):
+print(item)
+if i >= 50:
+break
+```
+The output is
+('!', 0)
+('"', 1)
+("'", 2)
+...
+('Her', 49)
+('Hermia', 50)
+
+As we can see, the dictionary contains individual tokens associated with unique inte-
+ger labels. Our next goal is to apply this vocabulary to convert new text into token IDs.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image14.png?raw=true)
+
+Starting with a new text sample, we tokenize the text and use the vocabulary to convert
+the text tokens into token IDs. The vocabulary is built from the entire training set and can be applied to the training set itself and any new text samples. The depicted vocabulary contains no punctuation or special characters for simplicity.
+When we want to convert the outputs of an LLM from numbers back into text, we need a
+way to turn token IDs into text. For this, we can create an inverse version of the vocabu-
+lary that maps token IDs back to the corresponding text tokens.
+
+Let’s implement a complete tokenizer class in Python with an encode method that
+splits text into tokens and carries out the string-to-integer mapping to produce token
+IDs via the vocabulary. In addition, we’ll implement a decode method that carries out
+the reverse integer-to-string mapping to convert the token IDs back into text. The fol-
+lowing listing shows the code for this tokenizer implementation.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image15.png?raw=true)
+
+Using the SimpleTokenizerV1 Python class, we can now instantiate new tokenizer
+objects via an existing vocabulary, which we can then use to encode and decode text,
+as illustrated in figure below.
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image16.png?raw=true)
+
+Let’s instantiate a new tokenizer object from the SimpleTokenizerV1 class and
+tokenize a passage from Edith Wharton’s short story to try it out in practice:
+```python
+tokenizer = SimpleTokenizerV1(vocab)
+text = """"It's the last he painted, you know,"
+Mrs. Gisburn said with pardonable pride."""
+ids = tokenizer.encode(text)
+print(ids)
+```
+
+So far, so good. We implemented a tokenizer capable of tokenizing and detokeniz-
+ing text based on a snippet from the training set. Let’s now apply it to a new text sam-
+ple not contained in the training set:
+```python
+text = "Hello, do you like tea?"
+print(tokenizer.encode(text))
+```
+Executing this code will result in the following error:
+KeyError: 'Hello'
+
+The problem is that the word “Hello” was not used in the “The Verdict” short story.
+Hence, it is not contained in the vocabulary. This highlights the need to consider
+large and diverse training sets to extend the vocabulary when working on LLMs.
