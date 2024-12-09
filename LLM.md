@@ -137,3 +137,70 @@ the other hand, few-shot learning involves learning from a minimal number of exa
 ples the user provides as input, as shown in figure below.
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image5.png?raw=true)
+
+**Transformers vs. LLMs**
+Today’s LLMs are based on the transformer architecture. Hence, transformers and
+LLMs are terms that are often used synonymously in the literature. However, note
+that not all transformers are LLMs since transformers can also be used for com-
+puter vision. Also, not all LLMs are transformers, as there are LLMs based on recur-
+rent and convolutional architectures. The main motivation behind these alternative
+approaches is to improve the computational efficiency of LLMs. Whether these alter-
+native LLM architectures can compete with the capabilities of transformer-based
+LLMs and whether they are going to be adopted in practice remains to be seen. For
+simplicity, I use the term “LLM” to refer to transformer-based LLMs similar to GPT.
+
+
+## Utilizing large datasets
+The large training datasets for popular GPT- and BERT-like models represent diverse
+and comprehensive text corpora encompassing billions of words, which include a vast
+array of topics and natural and computer languages.
+The pretrained nature of these models makes them incredibly versatile for further
+fine-tuning on downstream tasks, which is why they are also known as base or founda-
+tion models. Pretraining LLMs requires access to significant resources and is very
+expensive. For example, the GPT-3 pretraining cost is estimated to be $4.6 million in
+terms of cloud computing credits (https://mng.bz/VxEW).
+The good news is that many pretrained LLMs, available as open source models,
+can be used as general-purpose tools to write, extract, and edit texts that were not
+part of the training data. Also, LLMs can be fine-tuned on specific tasks with rela-
+tively smaller datasets, reducing the computational resources needed and improving
+performance.
+
+## A closer look at the GPT architecture
+GPT was originally introduced in the paper “Improving Language Understanding by
+Generative Pre-Training” (https://mng.bz/x2qg) by Radford et al. from OpenAI.
+GPT-3 is a scaled-up version of this model that has more parameters and was trained
+on a larger dataset. In addition, the original model offered in ChatGPT was created by
+fine-tuning GPT-3 on a large instruction dataset using a method from OpenAI’s
+InstructGPT paper (https://arxiv.org/abs/2203.02155).
+
+The model is simply trained to predict the next **word**
+In the next-word prediction pretraining task for GPT models, the system learns to predict the upcoming word in a sentence by looking at the words that have come before it. This
+approach helps the model understand how words and phrases typically fit together in language, forming a foundation that can be applied to various other tasks.
+The next-word prediction task is a form of self-supervised learning, which is a form of
+self-labeling. This means that we don’t need to collect labels for the training data
+explicitly but can use the structure of the data itself: we can use the next word in a sen-
+tence or document as the label that the model is supposed to predict. Since this next-
+word prediction task allows us to create labels “on the fly,” it is possible to use massive
+unlabeled text datasets to train LLMs.
+
+Compared to the original transformer architecture, the
+general GPT architecture is relatively simple. Essentially, it’s just the decoder part
+without the encoder (figure below). Since decoder-style models like GPT generate text
+by predicting text one word at a time, they are considered a type of autoregressive
+model. Autoregressive models incorporate their previous outputs as inputs for future
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image6.png?raw=true)
+
+Although the original transformer model, consisting of encoder and decoder blocks,
+was explicitly designed for language translation, GPT models—despite their larger yet simpler decoder-only architecture aimed at next-word prediction—are also capable of
+performing translation tasks. This capability was initially unexpected to researchers, as
+it emerged from a model primarily trained on a next-word prediction task, which is a
+task that did not specifically target translation.
+The ability to perform tasks that the model wasn’t explicitly trained to perform is
+called an **emergent behavior**. This capability isn’t explicitly taught during training but
+emerges as a natural consequence of the model’s exposure to vast quantities of multi-
+lingual data in diverse contexts. The fact that GPT models can “learn” the translation
+patterns between languages and perform translation tasks even though they weren’t
+specifically trained for it demonstrates the benefits and capabilities of these large-
+scale, generative language models. We can perform diverse tasks without using diverse
+models for each.
