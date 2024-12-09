@@ -91,3 +91,49 @@ instruction and answer pairs, such as a query to translate a text accompanied by
 correctly translated text. In classification fine-tuning, the labeled dataset consists of
 texts and associated class labels—for example, emails associated with “spam” and “not
 spam” labels.
+
+## Introducing the transformer architecture
+Most modern LLMs rely on the transformer architecture, which is a deep neural net-
+work architecture introduced in the 2017 paper “Attention Is All You Need” (https://
+arxiv.org/abs/1706.03762). To understand LLMs, we must understand the original
+transformer, which was developed for machine translation, translating English texts to
+German and French. A simplified version of the transformer architecture is depicted
+in figure 1.4.
+The transformer architecture consists of two submodules: an encoder and a
+decoder. The encoder module processes the input text and encodes it into a series of
+numerical representations or vectors that capture the contextual information of the
+input. Then, the decoder module takes these encoded vectors and generates the out-
+put text. In a translation task, for example, the encoder would encode the text from
+the source language into vectors, and the decoder would decode these vectors to gen-
+erate text in the target language. Both the encoder and decoder consist of many layers
+connected by a so-called self-attention mechanism.
+A key component of transformers and LLMs is the self-attention mechanism (not
+shown), which allows the model to weigh the importance of different words or tokens
+in a sequence relative to each other. This mechanism enables the model to capture
+long-range dependencies and contextual relationships within the input data, enhanc-
+ing its ability to generate coherent and contextually relevant output.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image3.png?raw=true)
+
+BERT, which is built upon the original transformer’s encoder submodule, differs
+in its training approach from GPT. While GPT is designed for generative tasks, BERT
+and its variants specialize in masked word prediction, where the model predicts masked
+or hidden words in a given sentence, as shown in figure below. This unique training strategy
+equips BERT with strengths in text classification tasks, including sentiment prediction
+and document categorization. As an application of its capabilities, as of this writing, X
+(formerly Twitter) uses BERT to detect toxic content.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image4.png?raw=true)
+
+GPT, on the other hand, focuses on the decoder portion of the original transformer
+architecture and is designed for tasks that require generating texts. This includes
+machine translation, text summarization, fiction writing, writing computer code,
+and more.
+GPT models, primarily designed and trained to perform text completion tasks,
+also show remarkable versatility in their capabilities. These models are adept at exe-
+cuting both zero-shot and few-shot learning tasks. Zero-shot learning refers to the abil-
+ity to generalize to completely unseen tasks without any prior specific examples. On
+the other hand, few-shot learning involves learning from a minimal number of exam-
+ples the user provides as input, as shown in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image5.png?raw=true)
