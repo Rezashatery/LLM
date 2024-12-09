@@ -204,3 +204,77 @@ patterns between languages and perform translation tasks even though they weren�
 specifically trained for it demonstrates the benefits and capabilities of these large-
 scale, generative language models. We can perform diverse tasks without using diverse
 models for each.
+
+
+## Building a large language model
+Now that we’ve laid the groundwork for understanding LLMs, let’s code one from
+scratch. We will take the fundamental idea behind GPT as a blueprint and tackle this
+in three stages, as outlined in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image7.png?raw=true)
+
+The three main stages of coding an LLM are implementing the LLM architecture and data preparation process (stage 1), pretraining an LLM to create a foundation model (stage 2), and fine-tuning the foundation model to become a personal assistant or text classifier (stage 3).
+
+
+
+# Working with text data
+During the pretraining stage, LLMs process text one word at a time. Training
+LLMs with millions to billions of parameters using a next-word prediction task
+yields models with impressive capabilities. These models can then be further fine-
+tuned to follow general instructions or perform specific target tasks. But before we
+can implement and train LLMs, we need to prepare the training dataset, as illus-
+trated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image8.png?raw=true)
+
+This involves splitting text
+into individual word and subword tokens, which can then be encoded into vector rep-
+resentations for the LLM. You’ll also learn about advanced tokenization schemes like
+byte pair encoding, which is utilized in popular LLMs like GPT. Lastly, we’ll imple-
+ment a sampling and data-loading strategy to produce the input-output pairs neces-
+sary for training LLMs.
+
+## Understanding word embeddings
+
+Deep neural network models, including LLMs, cannot process raw text directly. Since
+text is categorical, it isn’t compatible with the mathematical operations used to imple-
+ment and train neural networks. Therefore, we need a way to represent words as
+continuous-valued vectors.
+
+The concept of converting data into a vector format is often referred to as **embedding**.
+Using a specific neural network layer or another pretrained neural network model, we
+can embed different data types—for example, video, audio, and text, as illustrated in
+figure below. However, it’s important to note that different data formats require distinct
+embedding models. For example, an embedding model designed for text would not
+be suitable for embedding audio or video data.the primary purpose of embeddings is to convert nonnumeric data into a format that neural networks can process.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image9.png?raw=true)
+
+Several algorithms and frameworks have been developed to generate word embed-
+dings. One of the earlier and most popular examples is the **Word2Vec** approach.
+Word2Vec trained neural network architecture to generate word embeddings by predicting the context of a word given the target word or vice versa. The main idea
+behind Word2Vec is that words that appear in similar contexts tend to have similar
+meanings. Consequently, when projected into two-dimensional word embeddings for
+visualization purposes, similar terms are clustered together, as shown in figure below.
+Word embeddings can have varying dimensions, from one to thousands. A higher
+dimensionality might capture more nuanced relationships but at the cost of computa-
+tional efficiency.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image10.png?raw=true)
+
+If word embeddings are two-dimensional, we can plot them in a two-
+dimensional scatterplot for visualization purposes as shown here. When using word
+embedding techniques, such as Word2Vec, words corresponding to similar concepts
+often appear close to each other in the embedding space. For instance, different types
+of birds appear closer to each other in the embedding space than in countries and cities.
+While we can use pretrained models such as Word2Vec to generate embeddings for
+machine learning models, LLMs commonly produce their own embeddings that are
+part of the input layer and are updated during training. The advantage of optimizing
+the embeddings as part of the LLM training instead of using Word2Vec is that the
+embeddings are optimized to the specific task and data at hand.
+When working with LLMs, we typically use embeddings with a much higher dimensionality. For
+both GPT-2 and GPT-3, the embedding size (often referred to as the dimensionality
+of the model’s hidden states) varies based on the specific model variant and size. It
+is a tradeoff between performance and efficiency. The smallest GPT-2 models (117M
+and 125M parameters) use an embedding size of 768 dimensions to provide con-
+crete examples.
