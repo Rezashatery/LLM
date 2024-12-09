@@ -217,7 +217,7 @@ The three main stages of coding an LLM are implementing the LLM architecture and
 
 
 
-# Working with text data
+# Working with text data (CHAPTER 2)
 During the pretraining stage, LLMs process text one word at a time. Training
 LLMs with millions to billions of parameters using a next-word prediction task
 yields models with impressive capabilities. These models can then be further fine-
@@ -484,3 +484,83 @@ KeyError: 'Hello'
 The problem is that the word “Hello” was not used in the “The Verdict” short story.
 Hence, it is not contained in the vocabulary. This highlights the need to consider
 large and diverse training sets to extend the vocabulary when working on LLMs.
+
+## Adding special context tokens
+We need to modify the tokenizer to handle unknown words. We also need to address
+the usage and addition of special context tokens that can enhance a model’s under-
+standing of context or other relevant information in the text. These special tokens
+can include markers for unknown words and document boundaries, for example. In
+particular, we will modify the vocabulary and tokenizer, SimpleTokenizerV2, to sup-
+port two new tokens, <|unk|> and <|endoftext|>, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image17.png?raw=true)
+
+We add special tokens to a vocabulary to deal with certain contexts. For instance,
+we add an <|unk|> token to represent new and unknown words that were not part of the training
+data and thus not part of the existing vocabulary. Furthermore, we add an <|endoftext|>
+token that we can use to separate two unrelated text sources.
+we add a token between unrelated texts.For example, when training GPT-like LLMs on multiple independent documents or books, it is common to insert a token before each document or book that follows a previous text source, as illustrated in figure below. This helps the LLM understand that although these text sources are concatenated for training, they are, in fact,
+unrelated.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image18.png?raw=true)
+
+When working with multiple independent text source, we add <|endoftext|>
+tokens between these texts. These <|endoftext|> tokens act as markers, signaling the
+start or end of a particular segment, allowing for more effective processing and understanding
+by the LLM.
+
+Let’s now modify the vocabulary to include these two special tokens, <unk> and
+<|endoftext|>, by adding them to our list of all unique words:
+```python
+all_tokens = sorted(list(set(preprocessed)))
+all_tokens.extend(["<|endoftext|>", "<|unk|>"])
+vocab = {token:integer for integer,token in enumerate(all_tokens)}
+print(len(vocab.items()))
+```
+Based on the code output, we can confirm that the two new special tokens were
+indeed successfully incorporated into the vocabulary. Next, we adjust the tokenizer
+from previous code accordingly as shown in the following listing.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image19.png?raw=true)
+
+Let’s now try this new tokenizer out in practice. For this, we will use a simple text
+sample that we concatenate from two independent and unrelated sentences:
+```python
+text1 = "Hello, do you like tea?"
+text2 = "In the sunlit terraces of the palace."
+text = " <|endoftext|> ".join((text1, text2))
+print(text)
+```
+The output:
+Hello, do you like tea? <|endoftext|> In the sunlit terraces of
+the palace.
+
+Next, let’s tokenize the sample text using the SimpleTokenizerV2 on the vocab we
+previously created.
+
+```python
+tokenizer = SimpleTokenizerV2(vocab)
+print(tokenizer.encode(text))
+```
+Result: [1131, 5, 355, 1126, 628, 975, 10, 1130, 55, 988, 956, 984, 722, 988, 1131, 7]
+
+Depending on the LLM, some researchers also consider additional special tokens
+such as the following:
+
+- [BOS] (beginning of sequence)—This token marks the start of a text. It signifies to
+the LLM where a piece of content begins.
+- [EOS] (end of sequence)—This token is positioned at the end of a text and
+is especially useful when concatenating multiple unrelated texts, similar to
+<|endoftext|>. For instance, when combining two different Wikipedia arti-
+cles or books, the [EOS] token indicates where one ends and the next begins.
+- [PAD] (padding)—When training LLMs with batch sizes larger than one, the
+batch might contain texts of varying lengths. To ensure all texts have the same
+length, the shorter texts are extended or “padded” using the [PAD] token, up to
+the length of the longest text in the batch.
+
+The tokenizer used for GPT models does not need any of these tokens; it only uses an
+<|endoftext|> token for simplicity. <|endoftext|> is analogous to the [EOS] token.
+<|endoftext|> is also used for padding.
+Moreover, the tokenizer used for GPT models also doesn’t use an <|unk|> token
+for out-of-vocabulary words. Instead, GPT models use a byte pair encoding tokenizer,
+which breaks words down into subword units.
