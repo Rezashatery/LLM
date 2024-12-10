@@ -837,3 +837,128 @@ modification to these embedding vectors to encode positional information about a
 token within a text.
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image27.png?raw=true)
+
+## Encoding word positions
+In principle, token embeddings are a suitable input for an LLM. However, a minor
+shortcoming of LLMs is that their self-attention mechanism doesn’t
+have a notion of position or order for the tokens within a sequence. The way the pre-
+viously introduced embedding layer works is that the same token ID always gets
+mapped to the same vector representation, regardless of where the token ID is posi-
+tioned in the input sequence, as shown in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image28.png?raw=true)
+
+The embedding layer converts a token ID into the same vector
+representation regardless of where it is located in the input sequence. For
+example, the token ID 5, whether it’s in the first or fourth position in the
+token ID input vector, will result in the same embedding vector.
+In principle, the deterministic, position-independent embedding of the token ID is
+good for reproducibility purposes. However, since the self-attention mechanism of
+LLMs itself is also position-agnostic, it is helpful to inject additional position informa-
+tion into the LLM.
+To achieve this, we can use two broad categories of position-aware embeddings: rela-
+tive positional embeddings and absolute positional embeddings. Absolute positional
+embeddings are directly associated with specific positions in a sequence. For each posi-
+tion in the input sequence, a unique embedding is added to the token’s embedding to
+convey its exact location. For instance, the first token will have a specific positional
+embedding, the second token another distinct embedding, and so on, as illustrated in
+figure below.
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image29.png?raw=true)
+
+Positional embeddings are added to the token embedding vector to create the
+input embeddings for an LLM. The positional vectors have the same dimension as the original
+token embeddings. The token embeddings are shown with value 1 for simplicity.
+Instead of focusing on the absolute position of a token, the emphasis of relative posi-
+tional embeddings is on the relative position or distance between tokens. This means
+the model learns the relationships in terms of “how far apart” rather than “at which
+exact position.” The advantage here is that the model can generalize better to sequences
+of varying lengths, even if it hasn’t seen such lengths during training.Both types of positional embeddings aim to augment the capacity of LLMs to understand the order and relationships between tokens, ensuring more accurate and context-aware predictions. The choice between them often depends on the specific application and the nature of the data being processed.
+OpenAI’s GPT models use absolute positional embeddings that are optimized
+during the training process rather than being fixed or predefined like the positional
+encodings in the original transformer model. This optimization process is part of the
+model training itself. For now, let’s create the initial positional embeddings to create the
+LLM inputs.
+Previously, we focused on very small embedding sizes for simplicity. Now, let’s con-
+sider more realistic and useful embedding sizes and encode the input tokens into a
+256-dimensional vector representation, which is smaller than what the original GPT-3
+model used (in GPT-3, the embedding size is 12,288 dimensions) but still reasonable
+for experimentation. Furthermore, we assume that the token IDs were created by the
+BPE tokenizer we implemented earlier, which has a vocabulary size of 50,257:
+
+```python
+vocab_size = 50257
+output_dim = 256
+token_embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
+```
+Using the previous token_embedding_layer, if we sample data from the data loader,
+we embed each token in each batch into a 256-dimensional vector. If we have a batch
+size of 8 with four tokens each, the result will be an 8 × 4 × 256 tensor.
+Let’s instantiate the data loader first:
+```python
+max_length = 4
+dataloader = create_dataloader_v1(
+raw_text, batch_size=8, max_length=max_length,
+stride=max_length, shuffle=False
+)
+data_iter = iter(dataloader)
+inputs, targets = next(data_iter)
+print("Token IDs:\n", inputs)
+print("\nInputs shape:\n", inputs.shape)
+```
+This code prints
+```python
+Token IDs:
+tensor([[40,367, 2885, 1464],
+[ 1807, 3619,402,271],
+[10899, 2138,257, 7026],
+[15632,438, 2016,257],
+[ 922, 5891, 1576,438],
+[ 568,340,373,645],
+[ 1049, 5975,284,502],
+[ 284, 3285,326,11]])
+Inputs shape:
+torch.Size([8, 4])
+```
+As we can see, the token ID tensor is 8 × 4 dimensional, meaning that the data batch
+consists of eight text samples with four tokens each.Let’s now use the embedding layer to embed these token IDs into 256-dimensional vectors:
+```python
+token_embeddings = token_embedding_layer(inputs)
+print(token_embeddings.shape)
+```
+The print function call returns:
+torch.Size([8, 4, 256])
+
+The 8 × 4 × 256–dimensional tensor output shows that each token ID is now embed-
+ded as a 256-dimensional vector.
+For a GPT model’s absolute embedding approach, we just need to create another
+embedding layer that has the same embedding dimension as the token_embedding_
+layer:
+```python
+context_length = max_length
+pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
+pos_embeddings = pos_embedding_layer(torch.arange(context_length))
+print(pos_embeddings.shape)
+```
+The input to the pos_embeddings is usually a placeholder vector torch.arange(con-
+text_length), which contains a sequence of numbers 0, 1, ..., up to the maximum
+input length –1. The context_length is a variable that represents the supported input
+size of the LLM. Here, we choose it similar to the maximum length of the input text.
+In practice, input text can be longer than the supported context length, in which case
+we have to truncate the text.
+The output of the print statement is
+torch.Size([4, 256])
+
+As we can see, the positional embedding tensor consists of four 256-dimensional vec-
+tors. We can now add these directly to the token embeddings, where PyTorch will add
+the 4 × 256–dimensional pos_embeddings tensor to each 4 × 256–dimensional token
+embedding tensor in each of the eight batches:
+```python
+input_embeddings = token_embeddings + pos_embeddings
+print(input_embeddings.shape)
+```
+The print output is
+torch.Size([8, 4, 256])
+The input_embeddings we created, as summarized in figure below, are the embedded
+input examples that can now be processed by the main LLM modules,
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image30.png?raw=true)
