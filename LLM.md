@@ -962,3 +962,55 @@ The input_embeddings we created, as summarized in figure below, are the embedded
 input examples that can now be processed by the main LLM modules,
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image30.png?raw=true)
+
+# Coding attention mechanisms (CHAPTER 3)
+At this point, you know how to prepare the input text for training LLMs by splitting
+text into individual word and subword tokens, which can be encoded into vector rep-
+resentations, embeddings, for the LLM.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image31.png?raw=true)
+parts of the LLM surrounding the self-attention mechanism to see it in action and to
+create a model to generate text.
+We will implement four different variants of attention mechanisms, as illustrated in
+figure below. These different attention variants build on each other, and the goal is to arrive at a compact and efficient implementation of multi-head attention that we can
+then plug into the LLM architecture.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image32.png?raw=true)
+
+## The problem with modeling long sequences
+
+Before we dive into the self-attention mechanism at the heart of LLMs, let’s consider
+the problem with pre-LLM architectures that do not include attention mechanisms.
+Suppose we want to develop a language translation model that translates text from
+one language into another. As shown in figure 3.3, we can’t simply translate a text word
+by word due to the grammatical structures in the source and target language.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image33.png?raw=true)
+
+To address this problem, it is common to use a deep neural network with two submod-
+ules, an encoder and a decoder. The job of the encoder is to first read in and process the
+entire text, and the decoder then produces the translated text.
+Before the advent of transformers, recurrent neural networks (RNNs) were the most
+popular encoder–decoder architecture for language translation. An RNN is a type of
+neural network where outputs from previous steps are fed as inputs to the current step, making them well-suited for sequential data like text.
+
+In an encoder–decoder RNN, the input text is fed into the encoder, which pro-
+cesses it sequentially. The encoder updates its hidden state (the internal values at the
+hidden layers) at each step, trying to capture the entire meaning of the input sen-
+tence in the final hidden state, as illustrated in figure below. The decoder then takes this
+final hidden state to start generating the translated sentence, one word at a time. It
+also updates its hidden state at each step, which is supposed to carry the context nec-
+essary for the next-word prediction.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image34.png?raw=true)
+
+
+While we don’t need to know the inner workings of these encoder–decoder RNNs,
+the key idea here is that the encoder part processes the entire input text into a hid-
+den state (memory cell). The decoder then takes in this hidden state to produce the
+output. You can think of this hidden state as an embedding vector.
+The big limitation of encoder–decoder RNNs is that the RNN can’t directly access
+earlier hidden states from the encoder during the decoding phase. Consequently, it
+relies solely on the current hidden state, which encapsulates all relevant information.
+This can lead to a loss of context, especially in complex sentences where dependen-
+cies might span long distances.
