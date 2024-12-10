@@ -564,3 +564,59 @@ The tokenizer used for GPT models does not need any of these tokens; it only use
 Moreover, the tokenizer used for GPT models also doesn’t use an <|unk|> token
 for out-of-vocabulary words. Instead, GPT models use a byte pair encoding tokenizer,
 which breaks words down into subword units.
+
+## Byte pair encoding
+Let’s look at a more sophisticated tokenization scheme based on a concept called byte
+pair encoding (BPE). The BPE tokenizer was used to train LLMs such as GPT-2, GPT-3,
+and the original model used in ChatGPT.
+Since implementing BPE can be relatively complicated, we will use an existing
+Python open source library called tiktoken.
+
+The code we will use is based on tiktoken 0.7.0. 
+Once installed, we can instantiate the BPE tokenizer from tiktoken as follows:
+```python
+from importlib.metadata import version
+import tiktoken
+tokenizer = tiktoken.get_encoding("gpt2")
+```
+
+The usage of this tokenizer is similar to the SimpleTokenizerV2 we implemented pre-
+viously via an encode method
+```python
+text = (
+"Hello, do you like tea? <|endoftext|> In the sunlit terraces"
+"of someunknownPlace."
+)
+integers = tokenizer.encode(text, allowed_special={"<|endoftext|>"})
+print(integers)
+```
+We can then convert the token IDs back into text using the decode method, similar to
+our SimpleTokenizerV2:
+```python
+strings = tokenizer.decode(integers)
+print(strings)
+```
+We can make two noteworthy observations based on the token IDs and decoded text.
+First, the <|endoftext|> token is assigned a relatively large token ID, namely, 50256.
+In fact, the BPE tokenizer, which was used to train models such as GPT-2, GPT-3, and
+the original model used in ChatGPT, has a total vocabulary size of 50,257, with
+<|endoftext|> being assigned the largest token ID.
+
+Second, the BPE tokenizer encodes and decodes unknown words, such as
+someunknownPlace, correctly. The BPE tokenizer can handle any unknown word. How
+does it achieve this without using <|unk|> tokens?
+The algorithm underlying BPE breaks down words that aren’t in its predefined
+vocabulary into smaller subword units or even individual characters, enabling it to
+handle out-of-vocabulary words. So, thanks to the BPE algorithm, if the tokenizer
+encounters an unfamiliar word during tokenization, it can represent it as a sequence
+of subword tokens or characters, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image20.png?raw=true)
+The ability to break down unknown words into individual characters ensures that
+the tokenizer and, consequently, the LLM that is trained with it can process any text,
+even if it contains words that were not present in its training data.
+in short, BPE builds its vocabulary by iteratively merging frequent characters into sub-
+words and frequent subwords into words. For example, BPE starts with adding all indi-
+vidual single characters to its vocabulary (“a,” “b,” etc.). In the next stage, it merges
+character combinations that frequently occur together into subwords. For example,
+“d” and “e” may be merged into the subword “de,” which is common in many English words like “define,” “depend,” “made,” and “hidden.” The merges are determined by a frequency cutoff.
