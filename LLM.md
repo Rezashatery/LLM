@@ -777,3 +777,63 @@ know that small batch sizes require less memory during training but lead to more
 a hyperparameter to experiment with when training LLMs.
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image25.png?raw=true)
+
+
+## Creating token embeddings
+
+The last step in preparing the input text for LLM training is to convert the token IDs
+into embedding vectors, as shown in figure 2.15. As a preliminary step, we must initialize these embedding weights with random values. This initialization serves as the starting
+point for the LLM’s learning process.A continuous vector representation, or embedding, is necessary since GPT-like LLMs are deep neural networks trained with the backpropagation algorithm.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image26.png?raw=true)
+
+Let’s see how the token ID to embedding vector conversion works with a hands-on
+example. Suppose we have the following four input tokens with IDs 2, 3, 5, and 1:
+
+input_ids = torch.tensor([2, 3, 5, 1])
+For the sake of simplicity, suppose we have a small vocabulary of only 6 words (instead
+of the 50,257 words in the BPE tokenizer vocabulary), and we want to create embed-
+dings of size 3 (in GPT-3, the embedding size is 12,288 dimensions):    
+vocab_size = 6
+output_dim = 3
+
+Using the vocab_size and output_dim, we can instantiate an embedding layer in
+PyTorch, setting the random seed to 123 for reproducibility purposes:
+
+```python
+torch.manual_seed(123)
+embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
+print(embedding_layer.weight)
+```
+The print statement prints the embedding layer’s underlying weight matrix:
+```python
+Parameter containing:
+tensor([[ 0.3374, -0.1778, -0.1690],
+[ 0.9178, 1.5810, 1.3010],
+[ 1.2753, -0.2010, -0.1606],
+[-0.4015, 0.9666, -1.1481],
+[-1.1589, 0.3255, -0.6315],
+[-2.8400, -0.7849, -1.4096]], requires_grad=True)
+```
+The weight matrix of the embedding layer contains small, random values. These val-
+ues are optimized during LLM training as part of the LLM optimization itself. More-
+over, we can see that the weight matrix has six rows and three columns. There is one row
+for each of the six possible tokens in the vocabulary, and there is one column for each of
+the three embedding dimensions.
+
+**NOTE** For those who are familiar with one-hot encoding, the embedding
+layer approach described here is essentially just a more efficient way of imple-
+menting one-hot encoding followed by matrix multiplication in a fully con-
+nected layer, which is illustrated in the supplementary code on GitHub at
+https://mng.bz/ZEB5. Because the embedding layer is just a more efficient
+implementation equivalent to the one-hot encoding and matrix-multiplica-
+tion approach, it can be seen as a neural network layer that can be optimized
+via backpropagation.
+
+Each row in this output matrix is obtained via a lookup operation from the embed-
+ding weight matrix, as illustrated in figure below.
+Having now created embedding vectors from token IDs, next we’ll add a small
+modification to these embedding vectors to encode positional information about a
+token within a text.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image27.png?raw=true)
