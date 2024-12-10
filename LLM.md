@@ -620,3 +620,160 @@ words and frequent subwords into words. For example, BPE starts with adding all 
 vidual single characters to its vocabulary (“a,” “b,” etc.). In the next stage, it merges
 character combinations that frequently occur together into subwords. For example,
 “d” and “e” may be merged into the subword “de,” which is common in many English words like “define,” “depend,” “made,” and “hidden.” The merges are determined by a frequency cutoff.
+
+## Data sampling with a sliding window
+
+The next step in creating the embeddings for the LLM is to generate the input–target
+pairs required for training an LLM. What do these input–target pairs look like? As we
+already learned, LLMs are pretrained by predicting the next word in a text, as depicted
+in figure below.
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image21.png?raw=true)
+
+Given a text sample, extract input blocks as subsamples that serve as
+input to the LLM, and the LLM’s prediction task during training is to predict the next
+word that follows the input block. During training, we mask out all words that are past
+the target. Note that the text shown in this figure must undergo tokenization before
+the LLM can process it; however, this figure omits the tokenization step for clarity.
+
+Let’s implement a data loader that fetches the input–target pairs in figure above from
+the training dataset using a sliding window approach. To get started, we will tokenize
+the whole “The Verdict” short story using the BPE tokenizer:
+```python
+with open("the-verdict.txt", "r", encoding="utf-8") as f:
+raw_text = f.read()
+enc_text = tokenizer.encode(raw_text)
+print(len(enc_text))
+```
+Executing this code will return 5145, the total number of tokens in the training set,
+after applying the BPE tokenizer.
+Next, we remove the first 50 tokens from the dataset for demonstration purposes,
+as it results in a slightly more interesting text passage in the next steps:
+```python
+enc_sample = enc_text[50:]
+```
+One of the easiest and most intuitive ways to create the input–target pairs for the next-
+word prediction task is to create two variables, x and y, where x contains the input
+tokens and y contains the targets, which are the inputs shifted by 1:
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image22.png?raw=true)
+
+Running the previous code prints the following output:
+x: [290, 4920, 2241, 287]
+y:       [4920, 2241, 287, 257]
+
+By processing the inputs along with the targets, which are the inputs shifted by one
+position, we can create the next-word prediction tasks as follows:
+```python
+for i in range(1, context_size+1):
+context = enc_sample[:i]
+desired = enc_sample[i]
+print(context, "---->", desired)
+```
+The code prints
+```python
+[290] ----> 4920
+[290, 4920] ----> 2241
+[290, 4920, 2241] ----> 287
+[290, 4920, 2241, 287] ----> 257
+```
+Everything left of the arrow (---->) refers to the input an LLM would receive, and
+the token ID on the right side of the arrow represents the target token ID that the
+LLM is supposed to predict.
+Let’s repeat the previous code but convert the token IDs
+into text:
+```python
+for i in range(1, context_size+1):
+context = enc_sample[:i]
+desired = enc_sample[i]
+print(tokenizer.decode(context), "---->", tokenizer.decode([desired]))
+```
+The following outputs show how the input and outputs look in text format:
+```python
+and ----> established
+and established ----> himself
+and established himself ----> in
+and established himself in ----> a
+```
+We’ve now created the input–target pairs that we can use for LLM training.
+There’s only one more task before we can turn the tokens into embeddings: imple-
+menting an efficient data loader that iterates over the input dataset and returns the inputs and targets as PyTorch tensors, which can be thought of as multidimensional
+arrays. In particular, we are interested in returning two tensors: an input tensor con-
+taining the text that the LLM sees and a target tensor that includes the targets for the
+LLM to predict, as depicted in figure below. While the figure shows the tokens in string
+format for illustration purposes, the code implementation will operate on token IDs
+directly since the encode method of the BPE tokenizer performs both tokenization
+and conversion into token IDs as a single step
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image23.png?raw=true)
+
+To implement efficient data loaders, we collect the inputs in a tensor, x, where each row
+represents one input context. A second tensor, y, contains the corresponding prediction targets (next words), which are created by shifting the input by one position.
+
+```python
+import torch
+from torch.utils.data import Dataset, DataLoader
+class GPTDatasetV1(Dataset):
+def __init__(self, txt, tokenizer, max_length, stride):
+    self.input_ids = []
+    self.target_ids = []
+    
+    token_ids = tokenizer.encode(txt)
+for i in range(0, len(token_ids) - max_length, stride): #Uses a sliding window to chunk the book into overlapping sequences of max_length
+    input_chunk = token_ids[i:i + max_length]
+    target_chunk = token_ids[i + 1: i + max_length + 1]
+    self.input_ids.append(torch.tensor(input_chunk))
+    self.target_ids.append(torch.tensor(target_chunk))
+def __len__(self):
+    return len(self.input_ids)  #Returns the total number of rows in the dataset
+def __getitem__(self, idx): 
+    return self.input_ids[idx], self.target_ids[idx] #Returns a single row from the dataset
+```
+The GPTDatasetV1 class is based on the PyTorch Dataset class and defines how indi-
+vidual rows are fetched from the dataset, where each row consists of a number of
+token IDs (based on a max_length) assigned to an input_chunk tensor. The target_
+chunk tensor contains the corresponding targets. I recommend reading on to see what
+the data returned from this dataset looks like when we combine the dataset with a
+PyTorch DataLoader—this will bring additional intuition and clarity.
+The following code uses the GPTDatasetV1 to load the inputs in batches via a PyTorch
+DataLoader.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image24.png?raw=true)
+
+Let’s test the dataloader with a batch size of 1 for an LLM with a context size of 4 to
+develop an intuition of how the GPTDatasetV1 class and the create_
+dataloader_v1 function work together:
+
+```python
+with open("the-verdict.txt", "r", encoding="utf-8") as f:
+raw_text = f.read()
+dataloader = create_dataloader_v1(
+raw_text, batch_size=1, max_length=4, stride=1, shuffle=False)
+data_iter = iter(dataloader)
+first_batch = next(data_iter)
+print(first_batch)
+```
+Executing the preceding code prints the following:
+[tensor([[40, 367, 2885, 1464]]), tensor([[ 367, 2885, 1464, 1807]])]
+The first_batch variable contains two tensors: the first tensor stores the input token
+IDs, and the second tensor stores the target token IDs. Since the max_length is set to
+4, each of the two tensors contains four token IDs. Note that an input size of 4 is quite
+small and only chosen for simplicity. It is common to train LLMs with input sizes of at
+least 256.
+To understand the meaning of stride=1, let’s fetch another batch from this dataset:
+```python
+second_batch = next(data_iter)
+print(second_batch)
+```
+The second batch has the following contents:
+[tensor([[ 367, 2885, 1464, 1807]]), tensor([[2885, 1464, 1807, 3619]])]
+
+If we compare the first and second batches, we can see that the second batch’s token
+IDs are shifted by one position (for example, the second ID in the first batch’s input is
+367, which is the first ID of the second batch’s input). The stride setting dictates the
+number of positions the inputs shift across batches, emulating a sliding window
+approach, as demonstrated in figure below.
+Batch sizes of 1, such as we have sampled from the data loader so far, are useful for
+illustration purposes. If you have previous experience with deep learning, you may
+know that small batch sizes require less memory during training but lead to more noisy model updates. Just like in regular deep learning, the batch size is a tradeoff and
+a hyperparameter to experiment with when training LLMs.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image25.png?raw=true)
