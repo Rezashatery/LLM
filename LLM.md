@@ -1205,3 +1205,107 @@ tensor([0.4419, 0.6515, 0.5683])
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image40.png?raw=true)
 The final step, after calculating and normalizing the attention scores to obtain the
 attention weights for query x(2), is to compute the context vector z(2). This context vector is a combination of all input vectors x(1) to x(T) weighted by the attention weights.
+
+## Computing attention weights for all input tokens
+So far, we have computed attention weights and the context vector for input 2, as
+shown in the highlighted row in figure below. Now let’s extend this computation to cal-
+culate attention weights and context vectors for all inputs.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image41.png?raw=true)
+
+The highlighted row shows the attention weights for the second input element as a query. Now we will generalize the computation to obtain all other attention weights. (Please note that the numbers in this figure are truncated to two digits after the decimal point to reduce visual clutter. The values in each row should add up to 1.0 or 100%.)
+
+We follow the same three steps as before (see figure below), except that we make a few
+modifications in the code to compute all context vectors instead of only the second
+one, z(2):
+```python
+attn_scores = torch.empty(6, 6)
+for i, x_i in enumerate(inputs):
+    for j, x_j in enumerate(inputs):
+        attn_scores[i, j] = torch.dot(x_i, x_j)
+print(attn_scores)
+```
+In step 1, we add an additional for loop to compute the dot products for all pairs of inputs.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image42.png?raw=true)
+
+The resulting attention scores are as follows:
+```python
+tensor([[0.9995, 0.9544, 0.9422, 0.4753, 0.4576, 0.6310],
+[0.9544, 1.4950, 1.4754, 0.8434, 0.7070, 1.0865],
+[0.9422, 1.4754, 1.4570, 0.8296, 0.7154, 1.0605],
+[0.4753, 0.8434, 0.8296, 0.4937, 0.3474, 0.6565],
+[0.4576, 0.7070, 0.7154, 0.3474, 0.6654, 0.2935],
+[0.6310, 1.0865, 1.0605, 0.6565, 0.2935, 0.9450]])
+```
+Each element in the tensor represents an attention score between each pair of inputs,
+as we saw before. Note that the values in that figure are normalized, which is
+why they differ from the unnormalized attention scores in the preceding tensor. We
+will take care of the normalization later.
+When computing the preceding attention score tensor, we used for loops in
+Python. However, for loops are generally slow, and we can achieve the same results
+using matrix multiplication:
+```python
+attn_scores = inputs @ inputs.T
+print(attn_scores)
+```
+We can visually confirm that the results are the same as before.
+In step 2 of figure above, we normalize each row so that the values in each row sum to 1:
+```python
+attn_weights = torch.softmax(attn_scores, dim=-1)
+print(attn_weights)
+```
+In the context of using PyTorch, the dim parameter in functions like torch.softmax
+specifies the dimension of the input tensor along which the function will be com-
+puted. By setting dim=-1, we are instructing the softmax function to apply the nor-
+malization along the last dimension of the attn_scores tensor. If attn_scores is a
+two-dimensional tensor (for example, with a shape of [rows, columns]), it will nor-
+malize across the columns so that the values in each row (summing over the column
+dimension) sum up to 1.
+We can verify that the rows indeed all sum to 1:
+```python
+row_2_sum = sum([0.1385, 0.2379, 0.2333, 0.1240, 0.1082, 0.1581])
+print("Row 2 sum:", row_2_sum)
+print("All row sums:", attn_weights.sum(dim=-1))
+```
+The result is
+Row 2 sum: 1.0
+All row sums: tensor([1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000])
+
+In the third and final step of figure above, we use these attention weights to compute all
+context vectors via matrix multiplication:
+In the third and final step of figure above, we use these attention weights to compute all
+context vectors via matrix multiplication:
+```python
+all_context_vecs = attn_weights @ inputs
+print(all_context_vecs)
+```
+In the resulting output tensor, each row contains a three-dimensional context vector:
+```python
+tensor([[0.4421, 0.5931, 0.5790],
+[0.4419, 0.6515, 0.5683],
+[0.4431, 0.6496, 0.5671],
+[0.4304, 0.6298, 0.5510],
+[0.4671, 0.5910, 0.5266],
+[0.4177, 0.6503, 0.5645]])
+```
+Next, we will add trainable weights, enabling the LLM to learn from data and improve its per-
+formance on specific tasks.
+
+## Implementing self-attention with trainable weights
+Our next step will be to implement the self-attention mechanism used in the origi-
+nal transformer architecture, the GPT models, and most other popular LLMs. This
+self-attention mechanism is also called scaled dot-product attention. Figure below shows
+how this self-attention mechanism fits into the broader context of implementing
+an LLM.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image43.png?raw=true)
+
+As illustrated in figure apove, the self-attention mechanism with trainable weights builds
+on the previous concepts: we want to compute context vectors as weighted sums over
+the input vectors specific to a certain input element. As you will see, there are only slight
+differences compared to the basic self-attention mechanism we coded earlier.
+The most notable difference is the introduction of weight matrices that are
+updated during model training. These trainable weight matrices are crucial so that
+the model (specifically, the attention module inside the model) can learn to produce
+“good” context vectors.
