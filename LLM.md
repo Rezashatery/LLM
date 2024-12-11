@@ -1014,3 +1014,49 @@ earlier hidden states from the encoder during the decoding phase. Consequently, 
 relies solely on the current hidden state, which encapsulates all relevant information.
 This can lead to a loss of context, especially in complex sentences where dependen-
 cies might span long distances.
+
+## Capturing data dependencies with attention mechanisms
+
+Although RNNs work fine for translating short sentences, they don’t work well for lon-
+ger texts as they don’t have direct access to previous words in the input. One major
+shortcoming in this approach is that the RNN must remember the entire encoded
+input in a single hidden state before passing it to the decoder.
+Hence, researchers developed the Bahdanau attention mechanism for RNNs in
+2014 which modifies the encoder–decoder RNN such that the decoder can
+selectively access different parts of the input sequence at each decoding step as illus-
+trated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image35.png?raw=true)
+
+Using an attention mechanism, the text-generating decoder part of the network can
+access all input tokens selectively. This means that some input tokens are more important than others for generating a given output token. The importance is determined by the attention weights, which we will compute later.
+consider the relevancy of, or “attend to,” all other positions in the same sequence
+when computing the representation of a sequence. Self-attention is a key component
+of contemporary LLMs based on the transformer architecture, such as the GPT series.
+This chapter focuses on coding and understanding this self-attention mechanism
+used in GPT-like models, as illustrated in figure 3.6. In the next chapter, we will code
+the remaining parts of the LLM.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image36.png?raw=true)
+
+Self-attention is a mechanism in transformers used to compute
+more efficient input representations by allowing each position in a sequence to
+interact with and weigh the importance of all other positions within the same
+sequence.
+
+## Attending to different parts of the input with self-attention
+We’ll now cover the inner workings of the self-attention mechanism and learn how to
+code it from the ground up. Self-attention serves as the cornerstone of every LLM
+based on the transformer architecture. This topic may require a lot of focus and atten-
+tion (no pun intended), but once you grasp its fundamentals, you will have con-
+quered one of the toughest aspects of this book and LLM implementation in general.
+
+**The “self” in self-attention**
+In self-attention, the “self” refers to the mechanism’s ability to compute attention
+weights by relating different positions within a single input sequence. It assesses and
+learns the relationships and dependencies between various parts of the input itself,
+such as words in a sentence or pixels in an image.
+This is in contrast to traditional attention mechanisms, where the focus is on the rela-
+tionships between elements of two different sequences, such as in sequence-to-
+sequence models where the attention might be between an input sequence and an
+output sequence.
