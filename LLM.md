@@ -1060,3 +1060,148 @@ This is in contrast to traditional attention mechanisms, where the focus is on t
 tionships between elements of two different sequences, such as in sequence-to-
 sequence models where the attention might be between an input sequence and an
 output sequence.
+
+## A simple self-attention mechanism without trainable weights
+Let’s begin by implementing a simplified variant of self-attention, free from any train-
+able weights, as summarized in figure below. The goal is to illustrate a few key concepts
+in self-attention before adding trainable weights.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image37.png?raw=true)
+
+The goal of self-attention is to compute a context vector for each input
+element that combines information from all other input elements. In this example,
+we compute the context vector z(2). The importance or contribution of each input
+element for computing z(2) is determined by the attention weights 21 to 2T. When
+computing z(2), the attention weights are calculated with respect to input element
+x(2) and all other inputs.
+
+Figure 3.7 shows an input sequence, denoted as x, consisting of T elements repre-
+sented as x(1) to x(T). This sequence typically represents text, such as a sentence, that
+has already been transformed into token embeddings.
+For example, consider an input text like “Your journey starts with one step.” In this
+case, each element of the sequence, such as x(1), corresponds to a d-dimensional
+embedding vector representing a specific token, like “Your.” Figure above shows these
+input vectors as three-dimensional embeddings.
+In self-attention, our goal is to calculate context vectors z(i) for each element x(i)
+in the input sequence. A context vector can be interpreted as an enriched embedding
+vector.
+To illustrate this concept, let’s focus on the embedding vector of the second input
+element, x(2) (which corresponds to the token “journey”), and the corresponding con-
+text vector, z(2), shown at the bottom of figure above. This enhanced context vector, z(2),
+is an embedding that contains information about x(2) and all other input elements,
+x(1) to x(T).
+Context vectors play a crucial role in self-attention. Their purpose is to create
+enriched representations of each element in an input sequence (like a sentence)
+by incorporating information from all other elements in the sequence (figure above).
+This is essential in LLMs, which need to understand the relationship and relevance
+of words in a sentence to each other. Later, we will add trainable weights that help
+an LLM learn to construct these context vectors so that they are relevant for the
+LLM to generate the next token. But first, let’s implement a simplified self-atten-
+tion mechanism to compute these weights and the resulting context vector one
+step at a time.
+
+Consider the following input sentence, which has already been embedded into
+three-dimensional vectors. I’ve chosen a small embedding dimension
+to ensure it fits on the page without line breaks:
+
+```python
+import torch
+inputs = torch.tensor(
+[[0.43, 0.15, 0.89], # Your
+[0.55, 0.87, 0.66], # journey
+[0.57, 0.85, 0.64], # starts
+[0.22, 0.58, 0.33], # with
+[0.77, 0.25, 0.10], # one
+[0.05, 0.80, 0.55]] # step
+)
+```
+The first step of implementing self-attention is to compute the intermediate values ω,
+referred to as attention scores, as illustrated in figure below. Due to spatial constraints,
+the figure displays the values of the preceding inputs tensor in a truncated version;
+for example, 0.87 is truncated to 0.8. In this truncated version, the embeddings of the
+words “journey” and “starts” may appear similar by random chance.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image38.png?raw=true)
+
+The overall goal is to illustrate the computation of the context vector z(2) using the
+second input element, x(2) as a query. This figure shows the first intermediate step, computing the attention scores w between the query x(2) and all other input elements as a dot product.
+
+Figure above illustrates how we calculate the intermediate attention scores between the
+query token and each input token. We determine these scores by computing the dot
+product of the query, x(2), with every other input token:
+
+```python
+query = inputs[1]  #The second input token serves as the query.
+attn_scores_2 = torch.empty(inputs.shape[0])
+for i, x_i in enumerate(inputs):
+attn_scores_2[i] = torch.dot(x_i, query)
+print(attn_scores_2)
+```
+
+The computed attention scores are
+tensor([0.9544, 1.4950, 1.4754, 0.8434, 0.7070, 1.0865])
+
+Beyond viewing the dot product operation as a mathematical tool that combines
+two vectors to yield a scalar value, the dot product is a measure of similarity
+because it quantifies how closely two vectors are aligned: a higher dot product indi-
+cates a greater degree of alignment or similarity between the vectors. In the con-
+text of self-attention mechanisms, the dot product determines the extent to which
+each element in a sequence focuses on, or “attends to,” any other element: the
+higher the dot product, the higher the similarity and attention score between two
+elements.
+In the next step, as shown in figure below, we normalize each of the attention scores we
+computed previously. The main goal behind the normalization is to obtain attention
+weights that sum up to 1. This normalization is a convention that is useful for interpre-
+tation and maintaining training stability in an LLM. Here’s a straightforward method
+for achieving this normalization step:
+```python
+attn_weights_2_tmp = attn_scores_2 / attn_scores_2.sum()
+print("Attention weights:", attn_weights_2_tmp)
+print("Sum:", attn_weights_2_tmp.sum())
+```
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image39.png?raw=true)
+
+As the output shows, the attention weights now sum to 1:
+Attention weights: tensor([0.1455, 0.2278, 0.2249, 0.1285, 0.1077, 0.1656])
+Sum: tensor(1.0000)
+In practice, it’s more common and advisable to use the softmax function for normal-
+ization. This approach is better at managing extreme values and offers more favorable 
+gradient properties during training. The following is a basic implementation of the
+softmax function for normalizing the attention scores:
+```python
+def softmax_naive(x):
+return torch.exp(x) / torch.exp(x).sum(dim=0)
+attn_weights_2_naive = softmax_naive(attn_scores_2)
+print("Attention weights:", attn_weights_2_naive)
+print("Sum:", attn_weights_2_naive.sum())
+```
+In addition, the softmax function ensures that the attention weights are always posi-
+tive. This makes the output interpretable as probabilities or relative importance,
+where higher weights indicate greater importance.Note that this naive softmax implementation (softmax_naive) may encounter numerical instability problems, such as overflow and underflow, when dealing with large or small input values. Therefore, in practice, it’s advisable to use the PyTorch implementation of softmax, which has been extensively optimized for performance:
+```python
+attn_weights_2 = torch.softmax(attn_scores_2, dim=0)
+print("Attention weights:", attn_weights_2)
+print("Sum:", attn_weights_2.sum())
+```
+In this case, it yields the same results as our previous softmax_naive function:
+Attention weights: tensor([0.1385, 0.2379, 0.2333, 0.1240, 0.1082, 0.1581])
+Sum: tensor(1.)
+Now that we have computed the normalized attention weights, we are ready for the
+final step, as shown in figure below: calculating the context vector z(2) by multiplying the
+embedded input tokens, x(i), with the corresponding attention weights and then sum-
+ming the resulting vectors. Thus, context vector z(2) is the weighted sum of all input vec-
+tors, obtained by multiplying each input vector by its corresponding attention weight:
+```python
+query = inputs[1]
+context_vec_2 = torch.zeros(query.shape)
+for i,x_i in enumerate(inputs):
+context_vec_2 += attn_weights_2[i]*x_i
+print(context_vec_2)
+```
+The results of this computation are
+tensor([0.4419, 0.6515, 0.5683])
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image40.png?raw=true)
+The final step, after calculating and normalizing the attention scores to obtain the
+attention weights for query x(2), is to compute the context vector z(2). This context vector is a combination of all input vectors x(1) to x(T) weighted by the attention weights.
