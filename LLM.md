@@ -1887,3 +1887,73 @@ We will tackle this expansion from causal attention to multi-head attention. Fir
 we will intuitively build a multi-head attention module by stacking multiple Causal-
 Attention modules. Then we will then implement the same multi-head attention
 module in a more complicated but more computationally efficient way.
+
+
+## Stacking multiple single-head attention layers
+In practical terms, implementing multi-head attention involves creating multiple
+instances of the self-attention mechanism, each with its own weights,
+and then combining their outputs. Using multiple instances of the self-attention
+mechanism can be computationally intensive, but it’s crucial for the kind of complex
+pattern recognition that models like transformer-based LLMs are known for.
+
+Figure 3.24 illustrates the structure of a multi-head attention module, which con-
+sists of multiple single-head attention modules, as previously depicted in previous figure,
+stacked on top of each other.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image55.png?raw=true)
+
+The multi-head attention module includes two single-head attention modules stacked on top of
+each other. So, instead of using a single matrix Wv for computing the value matrices, in a multi-head attention module with two heads, we now have two value weight matrices: Wv1 and Wv2. The same applies to the other weight matrices, WQ and Wk. We obtain two sets of context vectors Z1 and Z2 that we can combine into a single context vector matrix Z.
+
+As mentioned before, the main idea behind multi-head attention is to run the attention
+mechanism multiple times (in parallel) with different, learned linear projections—the
+results of multiplying the input data (like the query, key, and value vectors in attention
+mechanisms) by a weight matrix. In code, we can achieve this by implementing a sim-
+ple MultiHeadAttentionWrapper class that stacks multiple instances of our previously
+implemented CausalAttention module.
+
+```python
+class MultiHeadAttentionWrapper(nn.Module):
+    def __init__(self, d_in, d_out, context_length,
+                dropout, num_heads, qkv_bias=False):
+        super().__init__()
+        self.heads = nn.ModuleList(
+        [CausalAttention(d_in, d_out, context_length, dropout, qkv_bias)
+        for _ in range(num_heads)])
+    def forward(self, x):
+        return torch.cat([head(x) for head in self.heads], dim=-1)
+```
+For example, if we use this MultiHeadAttentionWrapper class with two attention heads
+(via num_heads=2) and CausalAttention output dimension d_out=2, we get a four-
+dimensional context vector (d_out*num_heads=4), as depicted in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image56.png?raw=true)
+
+Using the MultiHeadAttentionWrapper, we specified the number of
+attention heads (num_heads). If we set num_heads=2, as in this example, we obtain
+a tensor with two sets of context vector matrices. In each context vector matrix, the
+rows represent the context vectors corresponding to the tokens, and the columns
+correspond to the embedding dimension specified via d_out=4. We concatenate these
+context vector matrices along the column dimension. Since we have two attention
+heads and an embedding dimension of 2, the final embedding dimension is 2 × 2 = 4.
+
+To illustrate this further with a concrete example, we can use the MultiHeadAttention-
+Wrapper class similar to the CausalAttention class before:
+```python
+torch.manual_seed(123)
+context_length = batch.shape[1] # This is the number of tokens
+d_in, d_out = 3, 2
+mha = MultiHeadAttentionWrapper(d_in, d_out, context_length, 0.0, num_heads=2)
+context_vecs = mha(batch)
+print(context_vecs)
+print("context_vecs.shape:", context_vecs.shape)
+```
+The first dimension of the resulting context_vecs tensor is 2 since we have two input
+texts (the input texts are duplicated, which is why the context vectors are exactly the
+same for those). The second dimension refers to the 6 tokens in each input. The third
+dimension refers to the four-dimensional embedding of each token.
+Up to this point, we have implemented a MultiHeadAttentionWrapper that combined
+multiple single-head attention modules. However, these are processed sequentially via
+[head(x) for head in self.heads] in the forward method. We can improve this
+implementation by processing the heads in parallel. One way to achieve this is by com-
+puting the outputs for all attention heads simultaneously via matrix multiplication.
