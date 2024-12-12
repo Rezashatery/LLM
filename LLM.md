@@ -1309,3 +1309,294 @@ The most notable difference is the introduction of weight matrices that are
 updated during model training. These trainable weight matrices are crucial so that
 the model (specifically, the attention module inside the model) can learn to produce
 “good” context vectors.
+
+
+## Computing the attention weights step by step
+We will implement the self-attention mechanism step by step by introducing the
+three trainable weight matrices Wq, Wk, and Wv. These three matrices are used to
+project the embedded input tokens, x(i), into query, key, and value vectors, respec-
+tively, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image44.png?raw=true)
+
+In the first step of the self-attention mechanism with trainable weight matrices, we compute query (q), key (k), and value (v) vectors for input elements x. Similar to previous sections, we designate the second input, x(2), as the query input. The query vector q(2) is obtained via matrix multiplication between the input x(2) and the weight matrix Wq. Similarly, we obtain the key and value vectors via matrix multiplication involving the weight matrices Wk and Wv.
+Earlier, we defined the second input element x(2) as the query when we computed the
+simplified attention weights to compute the context vector z(2). Then we generalized
+this to compute all context vectors z(1) ... z(T) for the six-word input sentence “Your
+journey starts with one step.”
+Similarly, we start here by computing only one context vector, z(2), for illustration
+purposes. We will then modify this code to calculate all context vectors.
+Let’s begin by defining a few variables:
+
+```python
+x_2 = inputs[1] #The second input element
+d_in = inputs.shape[1] # The input embedding size, d=3
+d_out = 2 # The output embedding size, d_out=2
+```
+Note that in GPT-like models, the input and output dimensions are usually the same,
+but to better follow the computation, we’ll use different input ( d_in=3) and output
+(d_out=2) dimensions here.
+Next, we initialize the three weight matrices Wq, Wk, and Wv shown in figure above:
+```python
+torch.manual_seed(123)
+W_query = torch.nn.Parameter(torch.rand(d_in, d_out), requires_grad=False)
+W_key = torch.nn.Parameter(torch.rand(d_in, d_out), requires_grad=False)
+W_value = torch.nn.Parameter(torch.rand(d_in, d_out), requires_grad=False)
+```
+We set requires_grad=False to reduce clutter in the outputs, but if we were to use
+the weight matrices for model training, we would set requires_grad=True to update
+these matrices during model training.
+Next, we compute the query, key, and value vectors:
+```python
+query_2 = x_2 @ W_query
+key_2 = x_2 @ W_key
+value_2 = x_2 @ W_value
+print(query_2)
+```
+The output for the query results in a two-dimensional vector since we set the number
+of columns of the corresponding weight matrix, via d_out, to 2:
+tensor([0.4306, 1.4551])
+
+**Weight parameters vs. attention weights**
+In the weight matrices W, the term “weight” is short for “weight parameters,” the val-
+ues of a neural network that are optimized during training. This is not to be confused
+with the attention weights. As we already saw, attention weights determine the extent
+to which a context vector depends on the different parts of the input (i.e., to what
+extent the network focuses on different parts of the input).
+In summary, weight parameters are the fundamental, learned coefficients that define
+the network’s connections, while attention weights are dynamic, context-specific values.
+
+Even though our temporary goal is only to compute the one context vector, z(2), we still
+require the key and value vectors for all input elements as they are involved in com-
+puting the attention weights with respect to the query q (2).
+We can obtain all keys and values via matrix multiplication:
+```python
+keys = inputs @ W_key
+values = inputs @ W_value
+print("keys.shape:", keys.shape)
+print("values.shape:", values.shape)
+```
+As we can tell from the outputs, we successfully projected the six input tokens from a
+three-dimensional onto a two-dimensional embedding space:
+
+keys.shape: torch.Size([6, 2])
+values.shape: torch.Size([6, 2])
+
+The second step is to compute the attention scores, as shown in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image45.png?raw=true)
+
+The attention score computation is a dot-product computation similar to what we used in the
+simplified self-attention mechanism. The new aspect here is that we are not directly computing the dot-product between the input elements but using the query and key obtained by transforming the inputs via the respective weight matrices.
+
+First, let’s compute the attention score ω22:
+
+```python
+keys_2 = keys[1] #Remember that Python starts indexing at 0.
+attn_score_22 = query_2.dot(keys_2)
+print(attn_score_22)
+```
+The result for the unnormalized attention score is
+tensor(1.8524)
+Again, we can generalize this computation to all attention scores via matrix
+multiplication
+```python
+attn_scores_2 = query_2 @ keys.T #All attention scores for given query
+print(attn_scores_2)
+```
+
+Now, we want to go from the attention scores to the attention weights, as illustrated in
+figure below. We compute the attention weights by scaling the attention scores and
+using the softmax function. However, now we scale the attention scores by dividing
+them by the square root of the embedding dimension of the keys (taking the square
+root is mathematically the same as exponentiating by 0.5):
+
+```python
+d_k = keys.shape[-1]
+attn_weights_2 = torch.softmax(attn_scores_2 / d_k**0.5, dim=-1)
+print(attn_weights_2)
+```
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image46.png?raw=true)
+
+The resulting attention weights are
+tensor([0.1500, 0.2264, 0.2199, 0.1311, 0.0906, 0.1820])
+
+**The rationale behind scaled-dot product attention**
+The reason for the normalization by the embedding dimension size is to improve the
+training performance by avoiding small gradients. For instance, when scaling up the
+embedding dimension, which is typically greater than 1,000 for GPT-like LLMs, large
+dot products can result in very small gradients during backpropagation due to the
+softmax function applied to them. As dot products increase, the softmax function
+behaves more like a step function, resulting in gradients nearing zero. These small
+gradients can drastically slow down learning or cause training to stagnate.
+The scaling by the square root of the embedding dimension is the reason why this
+self-attention mechanism is also called scaled-dot product attention.
+Now, the final step is to compute the context vectors, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image47.png?raw=true)
+
+Similar to when we computed the context vector as a weighted sum over the input vec-
+tors, we now compute the context vector as a weighted sum over the
+value vectors. Here, the attention weights serve as a weighting factor that weighs
+the respective importance of each value vector. Also as before, we can use matrix mul-
+tiplication to obtain the output in one step:
+```python
+context_vec_2 = attn_weights_2 @ values
+print(context_vec_2)
+```
+The contents of the resulting vector are as follows:
+tensor([0.3061, 0.8210])
+
+So far, we’ve only computed a single context vector, z(2). Next, we will generalize the
+code to compute all context vectors in the input sequence, z(1) to z(T).
+
+**Why query, key, and value?**
+The terms “key,” “query,” and “value” in the context of attention mechanisms are
+borrowed from the domain of information retrieval and databases, where similar con-
+cepts are used to store, search, and retrieve information.
+A query is analogous to a search query in a database. It represents the current item
+(e.g., a word or token in a sentence) the model focuses on or tries to understand.
+The query is used to probe the other parts of the input sequence to determine how
+much attention to pay to them.
+The key is like a database key used for indexing and searching. In the attention mech-
+anism, each item in the input sequence (e.g., each word in a sentence) has an asso-
+ciated key. These keys are used to match the query.
+The value in this context is similar to the value in a key-value pair in a database. It
+represents the actual content or representation of the input items. Once the model
+determines which keys (and thus which parts of the input) are most relevant to the
+query (the current focus item), it retrieves the corresponding values.
+The use of these matrices (𝑊𝑞,𝑊𝑘,𝑊𝑣) in attention mechanisms is designed to transform the input into better representations that are more suited for capturing relationships and dependencies within the data, which is critical for a wide range of tasks. 
+Think of (𝑊𝑞,𝑊𝑘,𝑊𝑣) as analogous to lenses that allow the model to "view" the input in different ways:
+𝑊𝑞 : A lens that defines what you're looking for (queries).
+𝑊𝑘 : A lens that defines how to describe the data (keys).
+𝑊𝑣 : A lens that determines what information to use (values).
+These lenses are learned in a task-specific manner, enabling the model to adapt its focus based on what matters most for the task at hand.
+By applying (𝑊𝑞,𝑊𝑘,𝑊𝑣):
+The input is transformed into more useful representations for computing attention scores and aggregating information.
+The model becomes more versatile and effective for a wide range of tasks.
+It ensures that the attention mechanism can capture both local and global relationships, depending on the context.This flexibility and expressiveness are key reasons why attention mechanisms (and transformers) have become foundational in modern machine learning.
+
+
+
+## Implementing a compact self-attention Python class
+At this point, we have gone through a lot of steps to compute the self-attention out-
+puts. We did so mainly for illustration purposes so we could go through one step at a
+time. In practice, with the LLM implementation in the next chapter in mind, it is
+helpful to organize this code into a Python class, as shown in the following listing.
+
+```python
+import torch.nn as nn
+class SelfAttention_v1(nn.Module):
+    def __init__(self, d_in, d_out):
+        super().__init__()
+        self.W_query = nn.Parameter(torch.rand(d_in, d_out))
+        self.W_key= nn.Parameter(torch.rand(d_in, d_out))
+        self.W_value = nn.Parameter(torch.rand(d_in, d_out))
+    def forward(self, x):
+        keys = x @ self.W_key
+        queries = x @ self.W_query
+        values = x @ self.W_value
+        attn_scores = queries @ keys.T # omega
+        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)
+        context_vec = attn_weights @ values
+        return context_vec    
+```
+In this PyTorch code, SelfAttention_v1 is a class derived from nn.Module, which is a
+fundamental building block of PyTorch models that provides necessary functionalities
+for model layer creation and management.
+The __init__ method initializes trainable weight matrices (W_query, W_key, and
+W_value) for queries, keys, and values, each transforming the input dimension d_in to
+an output dimension d_out.
+During the forward pass, using the forward method, we compute the attention
+scores (attn_scores) by multiplying queries and keys, normalizing these scores using
+softmax. Finally, we create a context vector by weighting the values with these normal-
+ized attention scores.
+We can use this class as follows:
+```python
+torch.manual_seed(123)
+sa_v1 = SelfAttention_v1(d_in, d_out)
+print(sa_v1(inputs))
+```
+Since inputs contains six embedding vectors, this results in a matrix storing the six
+context vectors:
+```python
+tensor([[0.2996, 0.8053],
+[0.3061, 0.8210],
+[0.3058, 0.8203],
+[0.2948, 0.7939],
+[0.2927, 0.7891],
+[0.2990, 0.8040]], grad_fn=<MmBackward0>)
+```
+As a quick check, notice that the second row ([0.3061, 0.8210]) matches the con-
+tents of context_vec_2 in the previous section. Figure below summarizes the self-atten-
+tion mechanism we just implemented.
+Self-attention involves the trainable weight matrices Wq, Wk, and Wv. These matrices
+transform input data into queries, keys, and values, respectively, which are crucial com-
+ponents of the attention mechanism. As the model is exposed to more data during
+training, it adjusts these trainable weights, as we will see in upcoming chapters.
+We can improve the SelfAttention_v1 implementation further by utilizing
+PyTorch’s nn.Linear layers, which effectively perform matrix multiplication when
+the bias units are disabled. Additionally, a significant advantage of using nn.Linear instead of manually implementing nn.Parameter(torch.rand(...)) is that nn.Linear
+has an optimized weight initialization scheme, contributing to more stable and
+effective model training.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image48.png?raw=true)
+
+In self-attention, we transform the input vectors in the input matrix X with the three weight
+matrices, Wq, Wk, and Wv. The new compute the attention weight matrix based on the resulting queries (Q) and
+keys (K). Using the attention weights and values (V), we then compute the context vectors (Z). For visual clarity,
+we focus on a single input text with n tokens, not a batch of multiple inputs. Consequently, the three-dimensional
+input tensor is simplified to a two-dimensional matrix in this context. This approach allows for a more straightforward
+visualization and understanding of the processes involved. For consistency with later figures, the values in the
+attention matrix do not depict the real attention weights. (The numbers in this figure are truncated to two digits
+after the decimal point to reduce visual clutter. The values in each row should add up to 1.0 or 100%.)
+```python
+class SelfAttention_v2(nn.Module):
+    def __init__(self, d_in, d_out, qkv_bias=False):
+        super().__init__()
+        self.W_query = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_key = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_value = nn.Linear(d_in, d_out, bias=qkv_bias)
+    def forward(self, x):
+        keys = self.W_key(x)
+        queries = self.W_query(x)
+        values = self.W_value(x)
+        attn_scores = queries @ keys.T
+        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)
+        context_vec = attn_weights @ values
+        return context_vec   
+```
+
+You can use the SelfAttention_v2 similar to SelfAttention_v1:
+```python
+torch.manual_seed(789)
+sa_v2 = SelfAttention_v2(d_in, d_out)
+print(sa_v2(inputs))
+```
+The output is
+```python
+tensor([[-0.0739,
+[-0.0748,
+[-0.0749,
+[-0.0760,
+[-0.0763,
+[-0.0754,
+0.0713],
+0.0703],
+0.0702],
+0.0685],
+0.0679],
+0.0693]], grad_fn=<MmBackward0>)
+```
+Note that SelfAttention_v1 and SelfAttention_v2 give different outputs because
+they use different initial weights for the weight matrices since nn.Linear uses a more
+sophisticated weight initialization scheme.
+Next, we will make enhancements to the self-attention mechanism, focusing specifically
+on incorporating causal and multi-head elements. The causal aspect involves modify-
+ing the attention mechanism to prevent the model from accessing future information
+in the sequence, which is crucial for tasks like language modeling, where each word
+prediction should only depend on previous words.
+The multi-head component involves splitting the attention mechanism into multi-
+ple “heads.” Each head learns different aspects of the data, allowing the model to
+simultaneously attend to information from different representation subspaces at dif-
+ferent positions. This improves the model’s performance in complex tasks.
