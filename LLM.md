@@ -1826,3 +1826,64 @@ grad_fn=<MulBackward0>)
 Having gained an understanding of causal attention and dropout masking, we can
 now develop a concise Python class. This class is designed to facilitate the efficient
 application of these two techniques.
+
+
+## Implementing a compact causal attention class
+We will now incorporate the causal attention and dropout modifications into the
+SelfAttention Python class we developed in previous section. This class will then serve as a
+template for developing multi-head attention, which is the final attention class we will
+implement.
+But before we begin, let’s ensure that the code can handle batches consisting of
+more than one input so that the CausalAttention class supports the batch outputs
+produced by the data loader we implemented in previous chapter. 
+For simplicity, to simulate such batch inputs, we duplicate the input text example:
+```python
+batch = torch.stack((inputs, inputs), dim=0)
+print(batch.shape) # wo inputs with six tokens each; each token has embedding dimension 3.
+```
+This results in a three-dimensional tensor consisting of two input texts with six tokens
+each, where each token is a three-dimensional embedding vector:
+torch.Size([2, 6, 3])
+The following CausalAttention class is similar to the SelfAttention class we imple-
+mented earlier, except that we added the dropout and causal mask components.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image53.png?raw=true)
+
+While all added code lines should be familiar at this point, we now added a self
+.register_buffer() call in the __init__ method. The use of register_buffer in
+PyTorch is not strictly necessary for all use cases but offers several advantages here. For
+instance, when we use the CausalAttention class in our LLM, buffers are automati-
+cally moved to the appropriate device (CPU or GPU) along with our model, which will
+be relevant when training our LLM. This means we don’t need to manually ensure
+these tensors are on the same device as your model parameters, avoiding device mis-
+match errors.
+We can use the CausalAttention class as follows, similar to SelfAttention
+previously:
+```python
+torch.manual_seed(123)
+context_length = batch.shape[1]
+ca = CausalAttention(d_in, d_out, context_length, 0.0)
+context_vecs = ca(batch)
+print("context_vecs.shape:", context_vecs.shape)
+```
+The resulting context vector is a three-dimensional tensor where each token is now
+represented by a two-dimensional embedding:
+context_vecs.shape: torch.Size([2, 6, 2])
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image54.png?raw=true)
+
+Here’s what we’ve done so far. We began with a simplified attention mechanism, added trainable
+weights, and then added a causal attention mask. Next, we will extend the causal attention mechanism and code multi-head attention, which we will use in our LLM.
+
+## Extending single-head attention to multi-head attention
+
+Our final step will be to extend the previously implemented causal attention class over
+multiple heads. This is also called multi-head attention.
+The term “multi-head” refers to dividing the attention mechanism into multiple
+“heads,” each operating independently. In this context, a single causal attention mod-
+ule can be considered single-head attention, where there is only one set of attention
+weights processing the input sequentially.
+We will tackle this expansion from causal attention to multi-head attention. First,
+we will intuitively build a multi-head attention module by stacking multiple Causal-
+Attention modules. Then we will then implement the same multi-head attention
+module in a more complicated but more computationally efficient way.
