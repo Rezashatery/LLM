@@ -1696,3 +1696,133 @@ tensor([[1.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000],
 [0.1935, 0.1663, 0.1666, 0.1542, 0.1666, 0.1529]],
 grad_fn=<DivBackward0>)
 ```
+
+**Information leakage**
+When we apply a mask and then renormalize the attention weights, it might initially
+appear that information from future tokens (which we intend to mask) could still influ-
+ence the current token because their values are part of the softmax calculation. How-
+ever, the key insight is that when we renormalize the attention weights after masking,
+what we’re essentially doing is recalculating the softmax over a smaller subset (since
+masked positions don’t contribute to the softmax value).
+The mathematical elegance of softmax is that despite initially including all positions
+in the denominator, after masking and renormalizing, the effect of the masked posi-
+tions is nullified—they don’t contribute to the softmax score in any meaningful way.
+In simpler terms, after masking and renormalization, the distribution of attention
+weights is as if it was calculated only among the unmasked positions to begin with.
+This ensures there’s no information leakage from future (or otherwise masked)
+tokens as we intended.
+
+While we could wrap up our implementation of causal attention at this point, we can
+still improve it. Let’s take a mathematical property of the softmax function and imple-
+ment the computation of the masked attention weights more efficiently in fewer steps,
+as shown in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image51.png?raw=true)
+
+A more efficient way to obtain the masked attention weight matrix in
+causal attention is to mask the attention scores with negative infinity values before
+applying the softmax function.
+
+The softmax function converts its inputs into a probability distribution. When nega-
+tive infinity values (-∞) are present in a row, the softmax function treats them as zero
+probability. (Mathematically, this is because e –∞ approaches 0.)
+We can implement this more efficient masking “trick” by creating a mask with 1s
+above the diagonal and then replacing these 1s with negative infinity (-inf) values:
+```python
+mask = torch.triu(torch.ones(context_length, context_length), diagonal=1)
+masked = attn_scores.masked_fill(mask.bool(), -torch.inf)
+print(masked)
+```
+This results in the following mask:
+```python
+tensor([[0.2899,-inf,-inf,-inf,-inf,-inf],
+[0.4656, 0.1723,-inf,-inf,-inf,-inf],
+[0.4594, 0.1703, 0.1731,-inf,-inf,-inf],
+[0.2642, 0.1024, 0.1036, 0.0186,-inf,-inf],
+[0.2183, 0.0874, 0.0882, 0.0177, 0.0786,-inf],
+[0.3408, 0.1270, 0.1290, 0.0198, 0.1290, 0.0078]],
+grad_fn=<MaskedFillBackward0>)
+```
+Now all we need to do is apply the softmax function to these masked results, and we
+are done:   
+```python
+attn_weights = torch.softmax(masked / keys.shape[-1]**0.5, dim=1)
+print(attn_weights)
+```
+As we can see based on the output, the values in each row sum to 1, and no further
+normalization is necessary:
+```python
+tensor([[1.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000],
+[0.5517, 0.4483, 0.0000, 0.0000, 0.0000, 0.0000],
+[0.3800, 0.3097, 0.3103, 0.0000, 0.0000, 0.0000],
+[0.2758, 0.2460, 0.2462, 0.2319, 0.0000, 0.0000],
+[0.2175, 0.1983, 0.1984, 0.1888, 0.1971, 0.0000],
+[0.1935, 0.1663, 0.1666, 0.1542, 0.1666, 0.1529]],
+grad_fn=<SoftmaxBackward0>)
+```
+We could now use the modified attention weights to compute the context vectors via
+context_vec = attn_weights @ values, as in previous section. However, we will first cover
+another minor tweak to the causal attention mechanism that is useful for reducing
+overfitting when training LLMs.
+
+## Masking additional attention weights with dropout
+Dropout in deep learning is a technique where randomly selected hidden layer units
+are ignored during training, effectively “dropping” them out. This method helps pre-
+vent overfitting by ensuring that a model does not become overly reliant on any spe-
+cific set of hidden layer units. It’s important to emphasize that dropout is only used
+during training and is disabled afterward.
+In the transformer architecture, including models like GPT, dropout in the atten-
+tion mechanism is typically applied at two specific times: after calculating the atten-
+tion weights or after applying the attention weights to the value vectors. Here we will
+apply the dropout mask after computing the attention weights, as illustrated in fig-
+ure below, because it’s the more common variant in practice.
+In the following code example, we use a dropout rate of 50%, which means mask-
+ing out half of the attention weights. (When we train the GPT model in later chapters,
+we will use a lower dropout rate, such as 0.1 or 0.2.) We apply PyTorch’s dropout
+implementation first to a 6 × 6 tensor consisting of 1s for simplicity:
+
+```python
+torch.manual_seed(123)
+dropout = torch.nn.Dropout(0.5)
+example = torch.ones(6, 6) # Here, we create a matrix of 1s.
+print(dropout(example))
+```
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image52.png?raw=true)
+
+Using the causal attention mask (upper left), we apply an additional
+dropout mask (upper right) to zero out additional attention weights to reduce overfitting
+during training.
+As we can see, approximately half of the values are zeroed out:
+```python
+tensor([[2., 2., 0., 2., 2., 0.],
+[0., 0., 0., 2., 0., 2.],
+[2., 2., 2., 2., 0., 2.],
+[0., 2., 2., 0., 0., 2.],
+[0., 2., 0., 2., 0., 2.],
+[0., 2., 2., 2., 2., 0.]])
+```
+When applying dropout to an attention weight matrix with a rate of 50%, half of the
+elements in the matrix are randomly set to zero. To compensate for the reduction in
+active elements, the values of the remaining elements in the matrix are scaled up by a
+factor of 1/0.5 = 2. This scaling is crucial to maintain the overall balance of the attention weights, ensuring that the average influence of the attention mechanism remains
+consistent during both the training and inference phases.
+Now let’s apply dropout to the attention weight matrix itself:
+```python
+torch.manual_seed(123)
+print(dropout(attn_weights))
+```
+The resulting attention weight matrix now has additional elements zeroed out and the
+remaining 1s rescaled:
+
+```python
+tensor([[2.0000, 0.0000, 0 .0000, 0.0000, 0.0000, 0.0000],
+[0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000],
+[0.7599, 0.6194, 0.6206, 0.0000, 0.0000, 0.0000],
+[0.0000, 0.4921, 0.4925, 0.0000, 0.0000, 0.0000],
+[0.0000, 0.3966, 0.0000, 0.3775, 0.0000, 0.0000],
+[0.0000, 0.3327, 0.3331, 0.3084, 0.3331, 0.0000]],
+grad_fn=<MulBackward0>)
+```
+Having gained an understanding of causal attention and dropout masking, we can
+now develop a concise Python class. This class is designed to facilitate the efficient
+application of these two techniques.
