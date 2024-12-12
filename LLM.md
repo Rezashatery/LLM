@@ -1957,3 +1957,128 @@ multiple single-head attention modules. However, these are processed sequentiall
 [head(x) for head in self.heads] in the forward method. We can improve this
 implementation by processing the heads in parallel. One way to achieve this is by com-
 puting the outputs for all attention heads simultaneously via matrix multiplication.
+
+## Implementing multi-head attention with weight splits
+So far, we have created a MultiHeadAttentionWrapper to implement multi-head
+attention by stacking multiple single-head attention modules. This was done by instan-
+tiating and combining several CausalAttention objects.
+Instead of maintaining two separate classes, MultiHeadAttentionWrapper and
+CausalAttention, we can combine these concepts into a single MultiHeadAttention
+class. Also, in addition to merging the MultiHeadAttentionWrapper with the Causal-
+Attention code, we will make some other modifications to implement multi-head
+attention more efficiently.
+In the MultiHeadAttentionWrapper, multiple heads are implemented by creating
+a list of CausalAttention objects (self.heads), each representing a separate atten-
+tion head. The CausalAttention class independently performs the attention mecha-
+nism, and the results from each head are concatenated. In contrast, the following
+MultiHeadAttention class integrates the multi-head functionality within a single class.
+It splits the input into multiple heads by reshaping the projected query, key, and value
+tensors and then combines the results from these heads after computing attention.
+Let’s take a look at the MultiHeadAttention class before we discuss it further.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image57.png?raw=true)
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image58.png?raw=true)
+
+Even though the reshaping (.view) and transposing (.transpose) of tensors inside
+the MultiHeadAttention class looks very mathematically complicated, the Multi-
+HeadAttention class implements the same concept as the MultiHeadAttention-
+Wrapper earlier.
+On a big-picture level, in the previous MultiHeadAttentionWrapper, we stacked
+multiple single-head attention layers that we combined into a multi-head attention
+layer. The MultiHeadAttention class takes an integrated approach. It starts with a
+multi-head layer and then internally splits this layer into individual attention heads, as
+illustrated in figure below.
+The splitting of the query, key, and value tensors is achieved through tensor reshap-
+ing and transposing operations using PyTorch’s .view and .transpose methods. The
+input is first transformed (via linear layers for queries, keys, and values) and then
+reshaped to represent multiple heads.
+The key operation is to split the d_out dimension into num_heads and head_dim,
+where head_dim = d_out / num_heads. This splitting is then achieved using the .view
+method: a tensor of dimensions (b, num_tokens, d_out) is reshaped to dimension
+(b, num_tokens, num_heads, head_dim).
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image59.png?raw=true)
+
+In the MultiHeadAttentionWrapper class with two attention heads,
+we initialized two weight matrices, Wq1 and Wq2, and computed two query matrices, Q1
+and Q2 (top). In the MultiheadAttention class, we initialize one larger weight matrix
+Wq, only perform one matrix multiplication with the inputs to obtain a query matrix Q, and
+then split the query matrix into Q1 and Q2 (bottom). We do the same for the keys and
+values, which are not shown to reduce visual clutter.
+The tensors are then transposed to bring the num_heads dimension before the num_
+tokens dimension, resulting in a shape of (b, num_heads, num_tokens, head_dim). This
+transposition is crucial for correctly aligning the queries, keys, and values across the
+different heads and performing batched matrix multiplications efficiently.
+To illustrate this batched matrix multiplication, suppose we have the following
+tensor:
+
+```python
+# The shape of this tensor is (b, num_heads, num_tokens, head_dim) = (1, 2, 3, 4).
+a = torch.tensor([[[[0.2745, 0.6584, 0.2775, 0.8573], 
+[0.8993, 0.0390, 0.9268, 0.7388],
+[0.7179, 0.7058, 0.9156, 0.4340]],
+[[0.0772, 0.3565, 0.1479, 0.5331],
+[0.4066, 0.2318, 0.4545, 0.9737],
+[0.4606, 0.5159, 0.4220, 0.5786]]]])
+```
+Now we perform a batched matrix multiplication between the tensor itself and a view
+of the tensor where we transposed the last two dimensions, num_tokens and head_dim:
+
+print(a @ a.transpose(2, 3))
+The result is
+```python
+tensor([[[[1.3208, 1.1631, 1.2879],
+[1.1631, 2.2150, 1.8424],
+[1.2879, 1.8424, 2.0402]],
+[[0.4391, 0.7003, 0.5903],
+[0.7003, 1.3737, 1.0620],
+[0.5903, 1.0620, 0.9912]]]])
+```
+In this case, the matrix multiplication implementation in PyTorch handles the four-
+dimensional input tensor so that the matrix multiplication is carried out between the two
+last dimensions (num_tokens, head_dim) and then repeated for the individual heads.
+For instance, the preceding becomes a more compact way to compute the matrix
+multiplication for each head separately:
+```python
+first_head = a[0, 0, :, :]
+first_res = first_head @ first_head.T
+print("First head:\n", first_res)
+second_head = a[0, 1, :, :]
+second_res = second_head @ second_head.T
+print("\nSecond head:\n", second_res)
+```
+The results are exactly the same results as those we obtained when using the batched
+matrix multiplication print(a @ a.transpose(2, 3))
+
+Continuing with MultiHeadAttention, after computing the attention weights and con-
+text vectors, the context vectors from all heads are transposed back to the shape (b,
+num_tokens, num_heads, head_dim). These vectors are then reshaped (flattened) into
+the shape (b, num_tokens, d_out), effectively combining the outputs from all heads.
+Additionally, we added an output projection layer (self.out_proj) to Multi-
+HeadAttention after combining the heads, which is not present in the Causal-
+Attention class. This output projection layer is not strictly necessary,but it is commonly used in many LLM architectures, which is why I
+added it here for completeness.
+
+Even though the MultiHeadAttention class looks more complicated than the
+MultiHeadAttentionWrapper due to the additional reshaping and transposition of
+tensors, it is more efficient. The reason is that we only need one matrix multiplication
+to compute the keys, for instance, keys = self.W_key(x) (the same is true for the que-
+ries and values). In the MultiHeadAttentionWrapper, we needed to repeat this matrix
+multiplication, which is computationally one of the most expensive steps, for each
+attention head. 
+The MultiHeadAttention class can be used similar to the SelfAttention and
+CausalAttention classes we implemented earlier:
+```python
+torch.manual_seed(123)
+batch_size, context_length, d_in = batch.shape
+d_out = 2
+mha = MultiHeadAttention(d_in, d_out, context_length, 0.0, num_heads=2)
+context_vecs = mha(batch)
+print(context_vecs)
+print("context_vecs.shape:", context_vecs.shape)
+```
+For comparison, the smallest GPT-2 model (117 million parameters) has 12 atten-
+tion heads and a context vector embedding size of 768. The largest GPT-2 model (1.5
+billion parameters) has 25 attention heads and a context vector embedding size of
+1,600. The embedding sizes of the token inputs and context embeddings are the same
+in GPT models (d_in = d_out).
