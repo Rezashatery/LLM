@@ -2619,3 +2619,131 @@ ferent layers of a neural network, which are important for improving the trainin
 performance in deep neural network architectures.
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image71.png?raw=true)
+
+
+## Adding shortcut connections
+Let’s discuss the concept behind shortcut connections, also known as skip or residual
+connections. Originally, shortcut connections were proposed for deep networks in
+computer vision (specifically, in residual networks) to mitigate the challenge of van-
+ishing gradients. The vanishing gradient problem refers to the issue where gradients
+(which guide weight updates during training) become progressively smaller as they
+propagate backward through the layers, making it difficult to effectively train earlier
+layers.
+Figure below shows that a shortcut connection creates an alternative, shorter path
+for the gradient to flow through the network by skipping one or more layers, which is
+achieved by adding the output of one layer to the output of a later layer. This is why
+these connections are also known as skip connections. They play a crucial role in pre-
+serving the flow of gradients during the backward pass in training.
+In the following list, we implement the neural network in figure below to see how
+we can add shortcut connections in the forward method.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image72.png?raw=true)
+
+```python
+class ExampleDeepNeuralNetwork(nn.Module):
+    def __init__(self, layer_sizes, use_shortcut):
+        super().__init__()
+        self.use_shortcut = use_shortcut
+        self.layers = nn.ModuleList([
+            nn.Sequential(nn.Linear(layer_sizes[0], layer_sizes[1]),
+                GELU()),
+            nn.Sequential(nn.Linear(layer_sizes[1], layer_sizes[2]),
+                GELU()),
+            nn.Sequential(nn.Linear(layer_sizes[2], layer_sizes[3]),
+                GELU()),
+            nn.Sequential(nn.Linear(layer_sizes[3], layer_sizes[4]),
+                GELU()),
+            nn.Sequential(nn.Linear(layer_sizes[4], layer_sizes[5]),
+                GELU())
+            ])
+    def forward(self, x):
+        for layer in self.layers:
+            layer_output = layer(x)
+            if self.use_shortcut and x.shape == layer_output.shape:
+                x = x + layer_output
+            else:
+                x = layer_output
+        return x
+```
+The code implements a deep neural network with five layers, each consisting of a
+Linear layer and a GELU activation function. In the forward pass, we iteratively pass the
+input through the layers and optionally add the shortcut connections if the self.use_
+shortcut attribute is set to True.
+Let’s use this code to initialize a neural network without shortcut connections.
+Each layer will be initialized such that it accepts an example with three input values
+and returns three output values. The last layer returns a single output value:
+
+```python
+layer_sizes = [3, 3, 3, 3, 3, 1]
+sample_input = torch.tensor([[1., 0., -1.]])
+torch.manual_seed(123)
+model_without_shortcut = ExampleDeepNeuralNetwork(
+layer_sizes, use_shortcut=False
+)
+```
+Next, we implement a function that computes the gradients in the model’s back-
+ward pass:
+```python
+def print_gradients(model, x):
+    output = model(x)
+    target = torch.tensor([[0.]])
+    loss = nn.MSELoss()
+    loss = loss(output, target)
+    loss.backward()
+    for name, param in model.named_parameters():
+        if 'weight' in name:
+            print(f"{name} has gradient mean of {param.grad.abs().mean().item()}")
+```
+This code specifies a loss function that computes how close the model output and a
+user-specified target (here, for simplicity, the value 0) are. Then, when calling
+loss.backward(), PyTorch computes the loss gradient for each layer in the model. We
+can iterate through the weight parameters via model.named_parameters(). Suppose we
+have a 3 × 3 weight parameter matrix for a given layer. In that case, this layer will have
+3 × 3 gradient values, and we print the mean absolute gradient of these 3 × 3 gradient
+values to obtain a single gradient value per layer to compare the gradients between
+layers more easily.
+In short, the .backward() method is a convenient method in PyTorch that com-
+putes loss gradients, which are required during model training, without implement-
+ing the math for the gradient calculation ourselves, thereby making working with
+deep neural networks much more accessible.
+Let’s now use the print_gradients function and apply it to the model without skip
+connections:
+
+print_gradients(model_without_shortcut, sample_input)
+
+The output is
+layers.0.0.weight has gradient mean of 0.00020173587836325169
+layers.1.0.weight has gradient mean of 0.0001201116101583466
+layers.2.0.weight has gradient mean of 0.0007152041653171182
+layers.3.0.weight has gradient mean of 0.001398873864673078
+layers.4.0.weight has gradient mean of 0.005049646366387606
+
+The output of the print_gradients function shows, the gradients become smaller
+as we progress from the last layer (layers.4) to the first layer (layers.0), which is
+a phenomenon called the vanishing gradient problem.
+Let’s now instantiate a model with skip connections and see how it compares:
+```python
+torch.manual_seed(123)
+model_with_shortcut = ExampleDeepNeuralNetwork(
+    layer_sizes, use_shortcut=True)
+print_gradients(model_with_shortcut, sample_input)
+```
+The output is
+
+layers.0.0.weight has gradient mean of 0.22169792652130127
+layers.1.0.weight has gradient mean of 0.20694105327129364
+layers.2.0.weight has gradient mean of 0.32896995544433594
+layers.3.0.weight has gradient mean of 0.2665732502937317
+layers.4.0.weight has gradient mean of 1.3258541822433472
+
+The last layer (layers.4) still has a larger gradient than the other layers. However,
+the gradient value stabilizes as we progress toward the first layer (layers.0) and
+doesn’t shrink to a vanishingly small value.
+In conclusion, shortcut connections are important for overcoming the limitations
+posed by the vanishing gradient problem in deep neural networks. Shortcut connec-
+tions are a core building block of very large models such as LLMs, and they will help
+facilitate more effective training by ensuring consistent gradient flow across layers
+when we train the GPT model in the next chapter.
+Next, we’ll connect all of the previously covered concepts (layer normalization,
+GELU activations, feed forward module, and shortcut connections) in a transformer
+block, which is the final building block we need to code the GPT architecture.
