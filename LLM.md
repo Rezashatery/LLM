@@ -2094,3 +2094,187 @@ blocks. We will begin with a top-down view of the model architecture before cove
 ing the individual components in more detail.
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image60.png?raw=true)
+
+
+
+## Coding an LLM architecture
+LLMs, such as GPT (which stands for generative pretrained transformer), are large deep
+neural network architectures designed to generate new text one word (or token) at a
+time. However, despite their size, the model architecture is less complicated than you
+might think, since many of its components are repeated, as we will see later. Figure below.
+provides a top-down view of a GPT-like LLM, with its main components highlighted.
+We have already covered several aspects of the LLM architecture, such as input
+tokenization and embedding and the masked multi-head attention module. Now, we
+will implement the core structure of the GPT model, including its transformer blocks,
+which we will later train to generate human-like text.
+Previously, we used smaller embedding dimensions for simplicity, ensuring that the
+concepts and examples could comfortably fit on a single page. Now, we are scaling up
+to the size of a small GPT-2 model, specifically the smallest version with 124 million
+parameters, as described in “Language Models Are Unsupervised Multitask Learners,”
+by Radford et al. (https://mng.bz/yoBq). Note that while the original report men-
+tions 117 million parameters, this was later corrected. In chapter 6, we will focus on
+loading pretrained weights into our implementation and adapting it for larger GPT-2
+models with 345, 762, and 1,542 million parameters.
+In the context of deep learning and LLMs like GPT, the term “parameters” refers
+to the trainable weights of the model. These weights are essentially the internal vari-
+ables of the model that are adjusted and optimized during the training process to
+minimize a specific loss function. This optimization allows the model to learn from
+the training data.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image61.png?raw=true)
+
+We specify the configuration of the small GPT-2 model via the following Python dictio-
+nary, which we will use in the code examples later:
+
+```python
+GPT_CONFIG_124M = {
+"vocab_size": 50257, # Vocabulary size
+"context_length": 1024,
+"emb_dim": 768,  # Embedding dimension
+"n_heads": 12,   # Number of attention heads
+"n_layers": 12,  # Number of layers
+"drop_rate": 0.1, # Number of layers
+"qkv_bias": False # Query-Key-Value bias
+}
+```
+
+In the GPT_CONFIG_124M dictionary, we use concise variable names for clarity and to
+prevent long lines of code:
+- vocab_size refers to a vocabulary of 50,257 words, as used by the BPE tokenizer
+(see chapter 2).
+- context_length denotes the maximum number of input tokens the model can
+handle via the positional embeddings (see chapter 2).
+- emb_dim represents the embedding size, transforming each token into a 768-
+dimensional vector.
+- n_heads indicates the count of attention heads in the multi-head attention
+mechanism (see chapter 3).
+- n_layers specifies the number of transformer blocks in the model, which we
+will cover in the upcoming discussion.
+- drop_rate indicates the intensity of the dropout mechanism (0.1 implies a 10%
+random drop out of hidden units) to prevent overfitting (see chapter 3).
+- qkv_bias determines whether to include a bias vector in the Linear layers of
+the multi-head attention for query, key, and value computations. We will initially
+disable this, following the norms of modern LLMs, but we will revisit it in chap-
+ter 6 when we load pretrained GPT-2 weights from OpenAI into our model (see
+chapter 6).
+
+Using this configuration, we will implement a GPT placeholder architecture (Dummy-
+GPTModel), as shown in figure below. This will provide us with a big-picture view of how
+everything fits together and what other components we need to code to assemble the
+full GPT model architecture.
+The numbered boxes in figure below illustrate the order in which we tackle the indi-
+vidual concepts required to code the final GPT architecture. We will start with step 1,
+a placeholder GPT backbone we will call DummyGPTModel.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image62.png?raw=true)
+
+```python
+import torch
+import torch.nn as nn
+class DummyGPTModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
+        self.pos_emb = nn.Embedding(cfg["context_length"], cfg["emb_dim"])
+        self.drop_emb = nn.Dropout(cfg["drop_rate"])
+        self.trf_blocks = nn.Sequential(*[DummyTransformerBlock(cfg)
+                for _ in range(cfg["n_layers"])])
+        self.final_norm = DummyLayerNorm(cfg["emb_dim"])
+        self.out_head = nn.Linear(cfg["emb_dim"], cfg["vocab_size"], bias=False)
+    def forward(self, in_idx):
+        batch_size, seq_len = in_idx.shape
+        tok_embeds = self.tok_emb(in_idx)
+        pos_embeds = self.pos_emb(
+        torch.arange(seq_len, device=in_idx.device))
+        x = tok_embeds + pos_embeds
+        x = self.drop_emb(x)
+        x = self.trf_blocks(x)
+        x = self.final_norm(x)
+        logits = self.out_head(x)
+        return logits
+
+class DummyTransformerBlock(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+    def forward(self, x):
+        return x
+class DummyLayerNorm(nn.Module):
+    def __init__(self, normalized_shape, eps=1e-5):
+        super().__init__()
+    def forward(self, x):
+        return x    
+```
+The DummyGPTModel class in this code defines a simplified version of a GPT-like
+model using PyTorch’s neural network module (nn.Module). The model architecture
+in the DummyGPTModel class consists of token and positional embeddings, dropout,
+a series of transformer blocks (DummyTransformerBlock), a final layer normalization
+(DummyLayerNorm), and a linear output layer (out_head). The configuration is
+passed in via a Python dictionary, for instance, the GPT_CONFIG_124M dictionary we
+created earlier.
+The forward method describes the data flow through the model: it computes token
+and positional embeddings for the input indices, applies dropout, processes the data
+through the transformer blocks, applies normalization, and finally produces logits
+with the linear output layer.
+The code in above is already functional. However, for now, note that we use
+placeholders (DummyLayerNorm and DummyTransformerBlock) for the transformer block
+and layer normalization, which we will develop later.
+Next, we will prepare the input data and initialize a new GPT model to illustrate
+its usage. Building on our coding of the tokenizer (see chapter 2), let’s now con-
+sider a high-level overview of how data flows in and out of a GPT model, as shown in
+figure below.
+To implement these steps, we tokenize a batch consisting of two text inputs for the
+GPT model using the tiktoken tokenizer from chapter 2:
+
+```python
+import tiktoken
+tokenizer = tiktoken.get_encoding("gpt2")
+batch = []
+txt1 = "Every effort moves you"
+txt2 = "Every day holds a"
+batch.append(torch.tensor(tokenizer.encode(txt1)))
+batch.append(torch.tensor(tokenizer.encode(txt2)))
+batch = torch.stack(batch, dim=0)
+print(batch)
+```
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image63.png?raw=true)
+
+A big-picture overview showing how the input data is tokenized, embedded, and fed to the GPT model. Note that in our DummyGPTClass coded earlier, the token embedding is handled inside the GPT model. In LLMs, the embedded input token dimension typically matches the output dimension. The output embeddings here represent the context vectors.
+
+The resulting token IDs for the two texts are as follows:
+```python
+tensor([[6109,3626,6100,345],
+        [6109,1110,6622,257]])
+```
+The first row corresponds to the first text, and the second row corresponds to the second text.
+Next, we initialize a new 124-million-parameter DummyGPTModel instance and feed it
+the tokenized batch:
+```python
+torch.manual_seed(123)
+model = DummyGPTModel(GPT_CONFIG_124M)
+logits = model(batch)
+print("Output shape:", logits.shape)
+print(logits)
+```
+The model outputs, which are commonly referred to as logits, are as follows:
+```python
+Output shape: torch.Size([2, 4, 50257])
+tensor([[[-1.2034, 0.3201, -0.7130, ..., -1.5548, -0.2390, -0.4667],
+[-0.1192, 0.4539, -0.4432, ..., 0.2392, 1.3469, 1.2430],
+[ 0.5307, 1.6720, -0.4695, ..., 1.1966, 0.0111, 0.5835],
+[ 0.0139, 1.6755, -0.3388, ..., 1.1586, -0.0435, -1.0400]],
+[[-1.0908, 0.1798, -0.9484, ..., -1.6047, 0.2439, -0.4530],
+[-0.7860, 0.5581, -0.0610, ..., 0.4835, -0.0077, 1.6621],
+[ 0.3567, 1.2698, -0.6398, ..., -0.0162, -0.1296, 0.3717],
+[-0.2407, -0.7349, -0.5102, ..., 2.0057, -0.3694, 0.1814]]],
+grad_fn=<UnsafeViewBackward0>)
+```
+The output tensor has two rows corresponding to the two text samples. Each text sam-
+ple consists of four tokens; each token is a 50,257-dimensional vector, which matches
+the size of the tokenizer’s vocabulary.
+The embedding has 50,257 dimensions because each of these dimensions refers to
+a unique token in the vocabulary. When we implement the postprocessing code, we
+will convert these 50,257-dimensional vectors back into token IDs, which we can then
+decode into words.
+Now that we have taken a top-down look at the GPT architecture and its inputs and
+outputs, we will code the individual placeholders, starting with the real layer normal-
+ization class that will replace the DummyLayerNorm in the previous code.
