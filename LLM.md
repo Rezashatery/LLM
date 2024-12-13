@@ -2491,3 +2491,131 @@ dictate the batch size during training or inference. Since layer normalization n
 izes each input independently of the batch size, it offers more flexibility and stability
 in these scenarios. This is particularly beneficial for distributed training or when
 deploying models in environments where resources are constrained.
+
+
+## Implementing a feed forward network with GELU activations
+Next, we will implement a small neural network submodule used as part of the trans-
+former block in LLMs. We begin by implementing the GELU activation function,
+which plays a crucial role in this neural network submodule.
+For additional information on implementing neural networks in
+PyTorch, see section A.5 in appendix A.
+NOTE
+Historically, the ReLU activation function has been commonly used in deep learning
+due to its simplicity and effectiveness across various neural network architectures.
+However, in LLMs, several other activation functions are employed beyond the tradi-
+tional ReLU. Two notable examples are GELU (Gaussian error linear unit) and SwiGLU
+(Swish-gated linear unit).
+GELU and SwiGLU are more complex and smooth activation functions incorpo-
+rating Gaussian and sigmoid-gated linear units, respectively. They offer improved per-
+formance for deep learning models, unlike the simpler ReLU.
+The GELU activation function can be implemented in several ways; the exact ver-
+sion is defined as GELU(x) = x⋅Φ(x), where Φ(x) is the cumulative distribution func-
+tion of the standard Gaussian distribution. In practice, however, it’s common to
+implement a computationally cheaper approximation (the original GPT-2 model was
+also trained with this approximation, which was found via curve fitting):
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image67.png?raw=true)
+
+In code, we can implement this function as a PyTorch module.
+
+```python
+class GELU(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, x):
+        return 0.5 * x * (1 + torch.tanh(
+        torch.sqrt(torch.tensor(2.0 / torch.pi)) *
+        (x + 0.044715 * torch.pow(x, 3))
+        ))
+```
+Next, to get an idea of what this GELU function looks like and how it compares to the
+ReLU function, let’s plot these functions side by side:
+
+```python
+import matplotlib.pyplot as plt
+gelu, relu = GELU(), nn.ReLU()
+x = torch.linspace(-3, 3, 100) # Creates 100 sample data points in the range –3 to 3
+y_gelu, y_relu = gelu(x), relu(x)
+plt.figure(figsize=(8, 3))
+for i, (y, label) in enumerate(zip([y_gelu, y_relu], ["GELU", "ReLU"]), 1):
+    plt.subplot(1, 2, i)
+    plt.plot(x, y)
+    plt.title(f"{label} activation function")
+    plt.xlabel("x")
+    plt.ylabel(f"{label}(x)")
+    plt.grid(True)
+plt.tight_layout()
+plt.show()
+```
+As we can see in the resulting plot in figure below, ReLU (right) is a piecewise linear
+function that outputs the input directly if it is positive; otherwise, it outputs zero.
+GELU (left) is a smooth, nonlinear function that approximates ReLU but with a non-
+zero gradient for almost all negative values (except at approximately x = –0.75).
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image68.png?raw=true)
+The smoothness of GELU can lead to better optimization properties during training,
+as it allows for more nuanced adjustments to the model’s parameters. In contrast,
+ReLU has a sharp corner at zero (figure 4.18, right), which can sometimes make opti-
+mization harder, especially in networks that are very deep or have complex architec-
+tures. Moreover, unlike ReLU, which outputs zero for any negative input, GELU
+allows for a small, non-zero output for negative values. This characteristic means that
+during the training process, neurons that receive negative input can still contribute to
+the learning process, albeit to a lesser extent than positive inputs.
+Next, let’s use the GELU function to implement the small neural network module,
+FeedForward, that we will be using in the LLM’s transformer block later.
+
+```python
+class FeedForward(nn.Module):
+    def __init__(self, cfg):
+    super().__init__()
+    self.layers = nn.Sequential(
+        nn.Linear(cfg["emb_dim"], 4 * cfg["emb_dim"]),
+        GELU(),
+        nn.Linear(4 * cfg["emb_dim"], cfg["emb_dim"]),
+        )
+    def forward(self, x):
+        return self.layers(x)
+```
+As we can see, the FeedForward module is a small neural network consisting of two
+Linear layers and a GELU activation function. In the 124-million-parameter GPT
+model, it receives the input batches with tokens that have an embedding size of 768
+each via the GPT_CONFIG_124M dictionary where GPT_CONFIG_ 124M["emb_dim"] = 768.
+Figure below shows how the embedding size is manipulated inside this small feed for-
+ward neural network when we pass it some inputs.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image69.png?raw=true)
+
+An overview of the connections between the layers of the feed forward neural network. This neural network can accommodate variable batch sizes and numbers of tokens in the input. However, the embedding size for each token is determined and fixed when initializing
+the weights.
+
+Following the example in figure 4.9, let’s initialize a new FeedForward module with a
+token embedding size of 768 and feed it a batch input with two samples and three
+tokens each:
+
+```python
+ffn = FeedForward(GPT_CONFIG_124M)
+x = torch.rand(2, 3, 768)
+out = ffn(x)
+print(out.shape)
+```
+As we can see, the shape of the output tensor is the same as that of the input tensor:
+torch.Size([2, 3, 768])
+The FeedForward module plays a crucial role in enhancing the model’s ability to learn
+from and generalize the data. Although the input and output dimensions of this
+module are the same, it internally expands the embedding dimension into a higher-
+dimensional space through the first linear layer, as illustrated in figure below. This expan-
+sion is followed by a nonlinear GELU activation and then a contraction back to the orig-
+inal dimension with the second linear transformation. Such a design allows for the
+exploration of a richer representation space.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image70.png?raw=true)
+
+Moreover, the uniformity in input and output dimensions simplifies the architecture
+by enabling the stacking of multiple layers, as we will do later, without the need to
+adjust dimensions between them, thus making the model more scalable.
+As figure below shows, we have now implemented most of the LLM’s building blocks.
+Next, we will go over the concept of shortcut connections that we insert between dif-
+ferent layers of a neural network, which are important for improving the training
+performance in deep neural network architectures.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image71.png?raw=true)
