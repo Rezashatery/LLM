@@ -2082,3 +2082,15 @@ tion heads and a context vector embedding size of 768. The largest GPT-2 model (
 billion parameters) has 25 attention heads and a context vector embedding size of
 1,600. The embedding sizes of the token inputs and context embeddings are the same
 in GPT models (d_in = d_out).
+
+# Implementing a GPT model from scratch to generate text (CHAPTER 4)
+
+You’ve already learned and coded the multi-head attention mechanism, one of the
+core components of LLMs. Now, we will code the other building blocks of an LLM
+and assemble them into a GPT-like model that we will train in the next chapter to
+generate human-like text.
+The LLM architecture referenced in figure below, consists of several building
+blocks. We will begin with a top-down view of the model architecture before cover-
+ing the individual components in more detail.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image60.png?raw=true)
