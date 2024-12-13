@@ -2278,3 +2278,216 @@ decode into words.
 Now that we have taken a top-down look at the GPT architecture and its inputs and
 outputs, we will code the individual placeholders, starting with the real layer normal-
 ization class that will replace the DummyLayerNorm in the previous code.
+
+
+
+
+## Normalizing activations with layer normalization
+Training deep neural networks with many layers can sometimes prove challenging
+due to problems like vanishing or exploding gradients. These problems lead to unsta-
+ble training dynamics and make it difficult for the network to effectively adjust its
+weights, which means the learning process struggles to find a set of parameters
+(weights) for the neural network that minimizes the loss function. In other words, the
+network has difficulty learning the underlying patterns in the data to a degree that
+would allow it to make accurate predictions or decisions.
+Let’s now implement layer normalization to improve the stability and efficiency of neu-
+ral network training. The main idea behind layer normalization is to adjust the activa-
+tions (outputs) of a neural network layer to have a mean of 0 and a variance of 1, also
+known as unit variance. This adjustment speeds up the convergence to effective
+weights and ensures consistent, reliable training. In GPT-2 and modern transformer
+architectures, layer normalization is typically applied before and after the multi-head
+attention module, and, as we have seen with the DummyLayerNorm placeholder, before the final output layer. Figure below provides a visual overview of how layer normalization
+functions.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image64.png?raw=true)
+
+We can recreate the example shown in figure above via the following code, where we
+implement a neural network layer with five inputs and six outputs that we apply to two
+input examples:
+
+```python
+torch.manual_seed(123)
+batch_example = torch.randn(2, 5)
+layer = nn.Sequential(nn.Linear(5, 6), nn.ReLU())
+out = layer(batch_example)
+print(out)
+```
+This prints the following tensor, where the first row lists the layer outputs for the first
+input and the second row lists the layer outputs for the second row:
+```python
+tensor([[0.2260, 0.3470, 0.0000, 0.2216, 0.0000, 0.0000],
+[0.2133, 0.2394, 0.0000, 0.5198, 0.3297, 0.0000]],
+grad_fn=<ReluBackward0>)
+```
+Before we apply layer normalization to these outputs, let’s examine the mean and
+variance:
+
+```python
+mean = out.mean(dim=-1, keepdim=True)
+var = out.var(dim=-1, keepdim=True)
+print("Mean:\n", mean)
+print("Variance:\n", var)
+```
+The output is
+```python
+Mean:
+tensor([[0.1324],
+[0.2170]], grad_fn=<MeanBackward1>)
+Variance:
+tensor([[0.0231],
+[0.0398]], grad_fn=<VarBackward0>)
+```
+
+The first row in the mean tensor here contains the mean value for the first input row,
+and the second output row contains the mean for the second input row.
+Using keepdim=True in operations like mean or variance calculation ensures that the
+output tensor retains the same number of dimensions as the input tensor, even though
+the operation reduces the tensor along the dimension specified via dim. For instance,
+without keepdim=True, the returned mean tensor would be a two-dimensional vector
+[0.1324, 0.2170] instead of a 2 × 1–dimensional matrix [[0.1324], [0.2170]].
+The dim parameter specifies the dimension along which the calculation of the statis-
+tic (here, mean or variance) should be performed in a tensor. As figure below explains, for
+a two-dimensional tensor (like a matrix), using dim=-1 for operations such as mean or
+variance calculation is the same as using dim=1. This is because -1 refers to the tensor’s
+last dimension, which corresponds to the columns in a two-dimensional tensor. Later,
+when adding layer normalization to the GPT model, which produces three-dimensional
+tensors with the shape [batch_size, num_tokens, embedding_size], we can still use
+dim=-1 for normalization across the last dimension, avoiding a change from dim=1 to
+dim=2.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image65.png?raw=true)
+
+An illustration of the dim parameter when calculating the mean of a tensor. For instance, if we have a two-dimensional tensor (matrix) with dimensions [rows, columns], using dim=0 will perform the operation across rows (vertically, as shown at the bottom), resulting in an output that aggregates the data for each column. Using dim=1 or dim=-1 will perform the operation across columns (horizontally, as shown at the top), resulting in an output aggregating the data for each row.
+
+Next, let’s apply layer normalization to the layer outputs we obtained earlier. The
+operation consists of subtracting the mean and dividing by the square root of the vari-
+ance (also known as the standard deviation):
+
+```python
+out_norm = (out - mean) / torch.sqrt(var)
+mean = out_norm.mean(dim=-1, keepdim=True)
+var = out_norm.var(dim=-1, keepdim=True)
+print("Normalized layer outputs:\n", out_norm)
+print("Mean:\n", mean)
+print("Variance:\n", var)
+```
+As we can see based on the results, the normalized layer outputs, which now also con-
+tain negative values, have 0 mean and a variance of 1:
+
+```python
+Normalized layer outputs:
+tensor([[ 0.6159, 1.4126, -0.8719, 0.5872, -0.8719, -0.8719],
+[-0.0189, 0.1121, -1.0876, 1.5173, 0.5647, -1.0876]],
+grad_fn=<DivBackward0>)
+Mean:
+tensor([[-5.9605e-08],
+[1.9868e-08]], grad_fn=<MeanBackward1>)
+Variance:
+tensor([[1.],
+[1.]], grad_fn=<VarBackward0>)
+```
+
+Note that the value –5.9605e-08 in the output tensor is the scientific notation for
+–5.9605 × 10-8, which is –0.000000059605 in decimal form. This value is very close to 0,
+but it is not exactly 0 due to small numerical errors that can accumulate because of
+the finite precision with which computers represent numbers.
+To improve readability, we can also turn off the scientific notation when printing
+tensor values by setting sci_mode to False:
+
+```python
+torch.set_printoptions(sci_mode=False)
+print("Mean:\n", mean)
+print("Variance:\n", var)
+```
+The output is
+```python
+Mean:
+tensor([[
+[
+0.0000],
+0.0000]], grad_fn=<MeanBackward1>)
+Variance:
+tensor([[1.],
+[1.]], grad_fn=<VarBackward0>)
+```
+
+So far, we have coded and applied layer normalization in a step-by-step process. Let’s
+now encapsulate this process in a PyTorch module that we can use in the GPT model
+later.
+
+```python
+class LayerNorm(nn.Module):
+    def __init__(self, emb_dim):
+        super().__init__()
+        self.eps = 1e-5
+        self.scale = nn.Parameter(torch.ones(emb_dim))
+        self.shift = nn.Parameter(torch.zeros(emb_dim))
+    def forward(self, x):
+        mean = x.mean(dim=-1, keepdim=True)
+        var = x.var(dim=-1, keepdim=True, unbiased=False)
+        norm_x = (x - mean) / torch.sqrt(var + self.eps)
+        return self.scale * norm_x + self.shift
+```
+This specific implementation of layer normalization operates on the last dimension of
+the input tensor x, which represents the embedding dimension (emb_dim). The vari-
+able eps is a small constant (epsilon) added to the variance to prevent division by zero
+during normalization. The scale and shift are two trainable parameters (of the
+same dimension as the input) that the LLM automatically adjusts during training if it
+is determined that doing so would improve the model’s performance on its training
+task. This allows the model to learn appropriate scaling and shifting that best suit the
+data it is processing.
+
+**Biased variance**
+
+In our variance calculation method, we use an implementation detail by setting
+unbiased=False. For those curious about what this means, in the variance calcula-
+tion, we divide by the number of inputs n in the variance formula. This approach does
+not apply Bessel’s correction, which typically uses n – 1 instead of n in the denomi-
+nator to adjust for bias in sample variance estimation. This decision results in a so-
+called biased estimate of the variance. For LLMs, where the embedding dimension n
+is significantly large, the difference between using n and n – 1 is practically negligible.
+I chose this approach to ensure compatibility with the GPT-2 model’s normalization
+layers and because it reflects TensorFlow’s default behavior, which was used to
+implement the original GPT-2 model. Using a similar setting ensures our method is
+compatible with the pretrained weights we will load in chapter 6.
+Let’s now try the LayerNorm module in practice and apply it to the batch input:
+
+```python
+ln = LayerNorm(emb_dim=5)
+out_ln = ln(batch_example)
+mean = out_ln.mean(dim=-1, keepdim=True)
+var = out_ln.var(dim=-1, unbiased=False, keepdim=True)
+print("Mean:\n", mean)
+print("Variance:\n", var)
+```
+The results show that the layer normalization code works as expected and normalizes
+the values of each of the two inputs such that they have a mean of 0 and a variance of 1:
+
+```python
+Mean:
+tensor([[
+-0.0000],
+[
+0.0000]], grad_fn=<MeanBackward1>)
+Variance:
+tensor([[1.0000],
+[1.0000]], grad_fn=<VarBackward0>)
+```
+We have now covered two of the building blocks we will need to implement the GPT
+architecture, as shown in figure below. Next, we will look at the GELU activation func-
+tion, which is one of the activation functions used in LLMs, instead of the traditional
+ReLU function we used previously.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image66.png?raw=true)
+
+**Layer normalization vs. batch normalization**
+
+If you are familiar with batch normalization, a common and traditional normalization
+method for neural networks, you may wonder how it compares to layer normalization.
+Unlike batch normalization, which normalizes across the batch dimension, layer nor-
+malization normalizes across the feature dimension. LLMs often require significant
+computational resources, and the available hardware or the specific use case can
+dictate the batch size during training or inference. Since layer normalization normal-
+izes each input independently of the batch size, it offers more flexibility and stability
+in these scenarios. This is particularly beneficial for distributed training or when
+deploying models in environments where resources are constrained.
