@@ -2747,3 +2747,81 @@ when we train the GPT model in the next chapter.
 Next, we’ll connect all of the previously covered concepts (layer normalization,
 GELU activations, feed forward module, and shortcut connections) in a transformer
 block, which is the final building block we need to code the GPT architecture.
+
+
+
+## Connecting attention and linear layers in a transformer block
+Now, let’s implement the transformer block, a fundamental building block of GPT and
+other LLM architectures. This block, which is repeated a dozen times in the 124-million-
+parameter GPT-2 architecture, combines several concepts we have previously covered:
+multi-head attention, layer normalization, dropout, feed forward layers, and GELU
+activations. Later, we will connect this transformer block to the remaining parts of the
+GPT architecture.
+Figure below shows a transformer block that combines several components, includ-
+ing the masked multi-head attention module (see chapter 3) and the FeedForward
+module we previously implemented (see section 4.3). When a transformer block pro-
+cesses an input sequence, each element in the sequence (for example, a word or sub-
+word token) is represented by a fixed-size vector (in this case, 768 dimensions). The
+operations within the transformer block, including multi-head attention and feed for-
+ward layers, are designed to transform these vectors in a way that preserves their
+dimensionality.
+The idea is that the self-attention mechanism in the multi-head attention block iden-
+tifies and analyzes relationships between elements in the input sequence. In contrast,
+the feed forward network modifies the data individually at each position. This combina-
+tion not only enables a more nuanced understanding and processing of the input but
+also enhances the model’s overall capacity for handling complex data patterns.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image73.png?raw=true)
+
+An illustration of a transformer block. Input tokens have been embedded into 768-
+dimensional vectors. Each row corresponds to one token’s vector representation. The outputs of the transformer block are vectors of the same dimension as the input, which can then be fed into
+subsequent layers in an LLM.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image74.png?raw=true)
+The given code defines a TransformerBlock class in PyTorch that includes a multi-head
+attention mechanism (MultiHeadAttention) and a feed forward network (Feed-
+Forward), both configured based on a provided configuration dictionary (cfg), such
+as GPT_CONFIG_124M.
+Layer normalization (LayerNorm) is applied before each of these two components,
+and dropout is applied after them to regularize the model and prevent overfitting. This
+is also known as Pre-LayerNorm. Older architectures, such as the original transformer
+model, applied layer normalization after the self-attention and feed forward networks
+instead, known as Post-LayerNorm, which often leads to worse training dynamics.
+The class also implements the forward pass, where each component is followed by
+a shortcut connection that adds the input of the block to its output. This critical fea-
+ture helps gradients flow through the network during training and improves the
+learning of deep models.
+Using the GPT_CONFIG_124M dictionary we defined earlier, let’s instantiate a trans-
+former block and feed it some sample data:
+
+```python
+torch.manual_seed(123)
+x = torch.rand(2, 4, 768)
+block = TransformerBlock(GPT_CONFIG_124M)
+output = block(x)
+print("Input shape:", x.shape)
+print("Output shape:", output.shape)
+```
+The output is
+Input shape: torch.Size([2, 4, 768])
+Output shape: torch.Size([2, 4, 768])
+
+As we can see, the transformer block maintains the input dimensions in its output, indi-
+cating that the transformer architecture processes sequences of data without altering
+their shape throughout the network.
+The preservation of shape throughout the transformer block architecture is not
+incidental but a crucial aspect of its design. This design enables its effective applica-
+tion across a wide range of sequence-to-sequence tasks, where each output vector
+directly corresponds to an input vector, maintaining a one-to-one relationship. How-
+ever, the output is a context vector that encapsulates information from the entire
+input sequence. This means that while the physical dimensions of the
+sequence (length and feature size) remain unchanged as it passes through the trans-
+former block, the content of each output vector is re-encoded to integrate contextual
+information from across the entire input sequence.
+With the transformer block implemented, we now have all the building blocks
+needed to implement the GPT architecture. As illustrated in figure below, the trans-
+former block combines layer normalization, the feed forward network, GELU activa-
+tions, and shortcut connections. As we will eventually see, this transformer block will
+make up the main component of the GPT architecture.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image75.png?raw=true)
