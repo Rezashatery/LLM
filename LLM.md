@@ -2825,3 +2825,140 @@ tions, and shortcut connections. As we will eventually see, this transformer blo
 make up the main component of the GPT architecture.
 
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image75.png?raw=true)
+
+
+
+## Coding the GPT model
+We started this chapter with a big-picture overview of a GPT architecture that we
+called DummyGPTModel. In this DummyGPTModel code implementation, we showed the
+input and outputs to the GPT model, but its building blocks remained a black box
+using a DummyTransformerBlock and DummyLayerNorm class as placeholders.
+Let’s now replace the DummyTransformerBlock and DummyLayerNorm placeholders
+with the real TransformerBlock and LayerNorm classes we coded previously to assem-
+ble a fully working version of the original 124-million-parameter version of GPT-2. In
+chapter 5, we will pretrain a GPT-2 model, and in chapter 6, we will load in the pre-
+trained weights from OpenAI.
+Before we assemble the GPT-2 model in code, let’s look at its overall structure, as
+shown in figure below, which includes all the concepts we have covered so far. As we can
+see, the transformer block is repeated many times throughout a GPT model architec-
+ture. In the case of the 124-million-parameter GPT-2 model, it’s repeated 12 times,
+which we specify via the n_layers entry in the GPT_CONFIG_124M dictionary. This
+transform block is repeated 48 times in the largest GPT-2 model with 1,542 million
+parameters.
+The output from the final transformer block then goes through a final layer normal-
+ization step before reaching the linear output layer. This layer maps the transformer’s
+output to a high-dimensional space (in this case, 50,257 dimensions, corresponding to
+the model’s vocabulary size) to predict the next token in the sequence.
+Let’s now code the architecture in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image76.png?raw=true)
+An overview of the GPT model architecture showing the flow of data through the GPT model.
+Starting from the bottom, tokenized text is first converted into token embeddings, which are then augmented with positional embeddings. This combined information forms a tensor that is passed through a series of transformer blocks shown in the center (each containing multi-head attention and feed forward neural network layers with dropout and layer normalization), which are stacked on top of each other and repeated 12 times.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image77.png?raw=true)
+
+Thanks to the TransformerBlock class, the GPTModel class is relatively small and
+compact.
+The __init__ constructor of this GPTModel class initializes the token and posi-
+tional embedding layers using the configurations passed in via a Python dictionary,
+cfg. These embedding layers are responsible for converting input token indices into
+dense vectors and adding positional information (see chapter 2).
+Next, the __init__ method creates a sequential stack of TransformerBlock mod-
+ules equal to the number of layers specified in cfg. Following the transformer blocks,
+a LayerNorm layer is applied, standardizing the outputs from the transformer blocks to
+stabilize the learning process. Finally, a linear output head without bias is defined,
+which projects the transformer’s output into the vocabulary space of the tokenizer to
+generate logits for each token in the vocabulary.
+The forward method takes a batch of input token indices, computes their embed-
+dings, applies the positional embeddings, passes the sequence through the transformer
+blocks, normalizes the final output, and then computes the logits, representing the next
+token’s unnormalized probabilities. We will convert these logits into tokens and text
+outputs in the next section.
+
+Let’s now initialize the 124-million-parameter GPT model using the GPT_CONFIG_
+124M dictionary we pass into the cfg parameter and feed it with the batch text input
+we previously created:
+```python
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG_124M)
+out = model(batch)
+print("Input batch:\n", batch)
+print("\nOutput shape:", out.shape)
+print(out)
+```
+This code prints the contents of the input batch followed by the output tensor:
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image78.png?raw=true)
+As we can see, the output tensor has the shape [2, 4, 50257], since we passed in two
+input texts with four tokens each. The last dimension, 50257, corresponds to the
+vocabulary size of the tokenizer. Later, we will see how to convert each of these 50,257-
+dimensional output vectors back into tokens.
+Before we move on to coding the function that converts the model outputs into
+text, let’s spend a bit more time with the model architecture itself and analyze its size.
+Using the numel() method, short for “number of elements,” we can collect the total
+number of parameters in the model’s parameter tensors:
+
+```python
+total_params = sum(p.numel() for p in model.parameters())
+print(f"Total number of parameters: {total_params:,}")
+```
+The result is
+Total number of parameters: 163,009,536
+
+Now, a curious reader might notice a discrepancy. Earlier, we spoke of initializing
+a 124-million-parameter GPT model, so why is the actual number of parameters
+163 million?
+The reason is a concept called weight tying, which was used in the original GPT-2
+architecture. It means that the original GPT-2 architecture reuses the weights from
+the token embedding layer in its output layer. To understand better, let’s take a look at
+the shapes of the token embedding layer and linear output layer that we initialized on
+the model via the GPTModel earlier:
+
+```python
+print("Token embedding layer shape:", model.tok_emb.weight.shape)
+print("Output layer shape:", model.out_head.weight.shape)
+```
+As we can see from the print outputs, the weight tensors for both these layers have the
+same shape:
+
+Token embedding layer shape: torch.Size([50257, 768])
+Output layer shape: torch.Size([50257, 768])
+
+The token embedding and output layers are very large due to the number of rows for
+the 50,257 in the tokenizer’s vocabulary. Let’s remove the output layer parameter
+count from the total GPT-2 model count according to the weight tying:
+
+```python
+total_params_gpt2 = (
+total_params - sum(p.numel()
+for p in model.out_head.parameters())
+)
+print(f"Number of trainable parameters "
+f"considering weight tying: {total_params_gpt2:,}"
+)
+```
+
+The output is
+Number of trainable parameters considering weight tying: 124,412,160
+
+As we can see, the model is now only 124 million parameters large, matching the orig-
+inal size of the GPT-2 model.
+Weight tying reduces the overall memory footprint and computational complexity
+of the model. However, in my experience, using separate token embedding and out-
+put layers results in better training and model performance; hence, we use separate
+layers in our GPTModel implementation. The same is true for modern LLMs.
+```python
+total_size_bytes = total_params * 4
+total_size_mb = total_size_bytes / (1024 * 1024)
+print(f"Total size of the model: {total_size_mb:.2f} MB")
+```
+The result is
+Total size of the model: 621.83 MB
+
+In conclusion, by calculating the memory requirements for the 163 million parame-
+ters in our GPTModel object and assuming each parameter is a 32-bit float taking up 4
+bytes, we find that the total size of the model amounts to 621.83 MB, illustrating the
+relatively large storage capacity required to accommodate even relatively small LLMs.
+Now that we’ve implemented the GPTModel architecture and saw that it outputs
+numeric tensors of shape [batch_size, num_tokens, vocab_size], let’s write the code
+to convert these output tensors into text.
