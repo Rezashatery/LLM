@@ -2962,3 +2962,125 @@ relatively large storage capacity required to accommodate even relatively small 
 Now that we’ve implemented the GPTModel architecture and saw that it outputs
 numeric tensors of shape [batch_size, num_tokens, vocab_size], let’s write the code
 to convert these output tensors into text.
+
+
+
+## Generating text
+We will now implement the code that converts the tensor outputs of the GPT model
+back into text. Before we get started, let’s briefly review how a generative model like
+an LLM generates text one word (or token) at a time.
+Figure below illustrates the step-by-step process by which a GPT model generates
+text given an input context, such as “Hello, I am.” With each iteration, the input con-
+text grows, allowing the model to generate coherent and contextually appropriate
+text. By the sixth iteration, the model has constructed a complete sentence: “Hello, I
+am a model ready to help.” We’ve seen that our current GPTModel implementation
+outputs tensors with shape [batch_size, num_token, vocab_size]. Now the question
+is: How does a GPT model go from these output tensors to the generated text?
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image79.png?raw=true)
+
+The step-by-step process by which an LLM generates text, one
+token at a time. Starting with an initial input context (“Hello, I am”), the
+model predicts a subsequent token during each iteration, appending it to the
+input context for the next round of prediction. As shown, the first iteration
+adds “a,” the second “model,” and the third “ready,” progressively building
+the sentence.
+
+The process by which a GPT model goes from output tensors to generated text
+involves several steps, as illustrated in figure below. These steps include decoding the
+output tensors, selecting tokens based on a probability distribution, and converting
+these tokens into human-readable text.
+The next-token generation process detailed in figure below illustrates a single step
+where the GPT model generates the next token given its input. In each step, the model
+outputs a matrix with vectors representing potential next tokens. The vector corre-
+sponding to the next token is extracted and converted into a probability distribution via
+the softmax function. Within the vector containing the resulting probability scores, the
+index of the highest value is located, which translates to the token ID. This token ID is
+then decoded back into text, producing the next token in the sequence. Finally, this
+token is appended to the previous inputs, forming a new input sequence for the subse-
+quent iteration. This step-by-step process enables the model to generate text sequen-
+tially, building coherent phrases and sentences from the initial input context.
+In practice, we repeat this process over many iterations, such as shown in figure above,
+until we reach a user-specified number of generated tokens. In code, we can imple-
+ment the token-generation process as shown after the figure.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image80.png?raw=true)
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image81.png?raw=true)
+
+This code demonstrates a simple implementation of a generative loop for a lan-
+guage model using PyTorch. It iterates for a specified number of new tokens to be
+generated, crops the current context to fit the model’s maximum context size, com-
+putes predictions, and then selects the next token based on the highest probability
+prediction.
+To code the generate_text_simple function, we use a softmax function to con-
+vert the logits into a probability distribution from which we identify the position with
+the highest value via torch.argmax. The softmax function is monotonic, meaning it
+preserves the order of its inputs when transformed into outputs. So, in practice, the
+softmax step is redundant since the position with the highest score in the softmax out-
+put tensor is the same position in the logit tensor. In other words, we could apply the
+torch.argmax function to the logits tensor directly and get identical results. However,
+I provide the code for the conversion to illustrate the full process of transforming log-
+its to probabilities, which can add additional intuition so that the model generates the
+most likely next token, which is known as greedy decoding.
+When we implement the GPT training code in the next chapter, we will use addi-
+tional sampling techniques to modify the softmax outputs such that the model doesn’t
+always select the most likely token. This introduces variability and creativity in the gen-
+erated text.
+This process of generating one token ID at a time and appending it to the context
+using the generate_text_simple function is further illustrated in figure below.  We generate
+the token IDs in an iterative fashion. For instance, in iteration 1, the model is pro-
+vided with the tokens corresponding to “Hello, I am,” predicts the next token (with
+ID 257, which is “a”), and appends it to the input. This process is repeated until the
+model produces the complete sentence “Hello, I am a model ready to help” after six
+iterations.
+Let’s now try out the generate_text_simple function with the "Hello, I am" con-
+text as model input. First, we encode the input context into token IDs:
+
+```python
+start_context = "Hello, I am"
+encoded = tokenizer.encode(start_context)
+print("encoded:", encoded)
+encoded_tensor = torch.tensor(encoded).unsqueeze(0) #Adds batch dimension
+print("encoded_tensor.shape:", encoded_tensor.shape)
+```
+The encoded IDs are
+encoded: [15496, 11, 314, 716]
+encoded_tensor.shape: torch.Size([1, 4])
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image82.png?raw=true)
+
+The six iterations of a token prediction cycle, where the model takes a sequence of initial token IDs as input, predicts the next token, and appends this token to the input sequence for the next iteration. (The token IDs are also translated into their corresponding text for better understanding.)
+
+Next, we put the model into .eval() mode. This disables random components like
+dropout, which are only used during training, and use the generate_text_simple
+function on the encoded input tensor:
+```python
+model.eval()
+out = generate_text_simple(
+    model=model,
+    idx=encoded_tensor,
+    max_new_tokens=6,
+    context_size=GPT_CONFIG_124M["context_length"]
+)
+print("Output:", out)
+print("Output length:", len(out[0]))
+```
+The resulting output token IDs are
+
+Output: tensor([[15496,11,314,716,27018,24086,47843,30961,42348,7267]])
+Output length: 10
+
+Using the .decode method of the tokenizer, we can convert the IDs back into text:
+```python
+decoded_text = tokenizer.decode(out.squeeze(0).tolist())
+print(decoded_text)
+```
+The model output in text format is
+Hello, I am Featureiman Byeswickattribute argue
+
+As we can see, the model generated gibberish, which is not at all like the coherent text
+Hello, I am a model ready to help. What happened? The reason the model is unable to
+produce coherent text is that we haven’t trained it yet. So far, we have only implemented
+the GPT architecture and initialized a GPT model instance with initial random weights.
+Model training is a large topic in itself, and we will tackle it in the next chapter.
