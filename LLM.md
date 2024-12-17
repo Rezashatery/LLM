@@ -3470,3 +3470,195 @@ the given example, this would translate to the model being unsure about which am
 
 We have now calculated the loss for two small text inputs for illustration purposes.
 Next, we will apply the loss computation to the entire training and validation sets.
+
+
+
+
+## Calculating the training and validation set losses
+We must first prepare the training and validation datasets that we will use to train the
+LLM. Then, as highlighted in figure below, we will calculate the cross entropy for the
+training and validation sets, which is an important component of the model training
+process.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image90.png?raw=true)
+
+Having completed steps 1 and 2, including computing the cross entropy loss, we can now apply this loss computation to the entire text dataset that we will use for model training.
+
+To compute the loss on the training and validation datasets, we use a very small text
+dataset, the “The Verdict” short story by Edith Wharton, which we have already
+worked with in chapter 2. By selecting a text from the public domain, we circumvent
+any concerns related to usage rights. Additionally, using such a small dataset allows
+for the execution of code examples on a standard laptop computer in a matter of minutes, even without a high-end GPU, which is particularly advantageous for edu-
+cational purposes.
+
+**The cost of pretraining LLMs**
+
+To put the scale of our project into perspective, consider the training of the 7 billion
+parameter Llama 2 model, a relatively popular openly available LLM. This model
+required 184,320 GPU hours on expensive A100 GPUs, processing 2 trillion tokens.
+At the time of writing, running an 8 × A100 cloud server on AWS costs around $30
+per hour. A rough estimate puts the total training cost of such an LLM at around
+$690,000 (calculated as 184,320 hours divided by 8, then multiplied by $30).
+
+The following code loads the “The Verdict” short story:
+```python
+file_path = "the-verdict.txt"
+with open(file_path, "r", encoding="utf-8") as file:
+text_data = file.read()
+```
+After loading the dataset, we can check the number of characters and tokens in the
+dataset:
+
+```python
+total_characters = len(text_data)
+total_tokens = len(tokenizer.encode(text_data))
+print("Characters:", total_characters)
+print("Tokens:", total_tokens)
+```
+The output is
+Characters: 20479
+Tokens: 5145
+
+With just 5,145 tokens, the text might seem too small to train an LLM, but as men-
+tioned earlier, it’s for educational purposes so that we can run the code in minutes
+instead of weeks. Plus, later we will load pretrained weights from OpenAI into our
+GPTModel code.
+Next, we divide the dataset into a training and a validation set and use the data
+loaders from chapter 2 to prepare the batches for LLM training. This process is visual-
+ized in figure below. Due to spatial constraints, we use a max_length=6. However, for the
+actual data loaders, we set the max_length equal to the 256-token context length that
+the LLM supports so that the LLM sees longer texts during training.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image91.png?raw=true)
+
+When preparing the data loaders, we split the input text into training and validation set portions. Then we tokenize the text (only shown for the training set portion for simplicity) and divide the tokenized text into chunks of a user-specified length (here, 6). Finally, we shuffle the rows and organize the chunked text into batches (here, batch size 2), which we can use for model training.
+
+We are training the model with training data presented in similarly
+sized chunks for simplicity and efficiency. However, in practice, it can also be
+beneficial to train an LLM with variable-length inputs to help the LLM to bet-
+ter generalize across different types of inputs when it is being used.
+
+To implement the data splitting and loading, we first define a train_ratio to use 90%
+of the data for training and the remaining 10% as validation data for model evalua-
+tion during training:
+```python
+train_ratio = 0.90
+split_idx = int(train_ratio * len(text_data))
+train_data = text_data[:split_idx]
+val_data = text_data[split_idx:]
+```
+Using the train_data and val_data subsets, we can now create the respective data
+loader reusing the create_dataloader_v1 code from chapter 2:
+
+```python
+from chapter02 import create_dataloader_v1
+torch.manual_seed(123)
+train_loader = create_dataloader_v1(
+    train_data,
+    batch_size=2,
+    max_length=GPT_CONFIG_124M["context_length"],
+    stride=GPT_CONFIG_124M["context_length"],
+    drop_last=True,
+    shuffle=True,
+    num_workers=0
+)
+val_loader = create_dataloader_v1(
+    val_data,
+    batch_size=2,
+    max_length=GPT_CONFIG_124M["context_length"],
+    stride=GPT_CONFIG_124M["context_length"],
+    drop_last=False,
+    shuffle=False,
+    num_workers=0
+)
+```
+
+We used a relatively small batch size to reduce the computational resource demand
+because we were working with a very small dataset. In practice, training LLMs with
+batch sizes of 1,024 or larger is not uncommon.
+As an optional check, we can iterate through the data loaders to ensure that they
+were created correctly:
+```python
+print("Train loader:")
+for x, y in train_loader:
+    print(x.shape, y.shape)
+print("\nValidation loader:")
+for x, y in val_loader:
+    print(x.shape, y.shape)
+```
+
+We should see the following outputs:
+Train loader:
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+torch.Size([2, 256]) torch.Size([2, 256])
+
+Validation loader:
+torch.Size([2, 256]) torch.Size([2, 256])
+
+Based on the preceding code output, we have nine training set batches with two sam-
+ples and 256 tokens each. Since we allocated only 10% of the data for validation, there
+is only one validation batch consisting of two input examples. As expected, the input
+data (x) and target data (y) have the same shape (the batch size times the number of
+tokens in each batch) since the targets are the inputs shifted by one position, as dis-
+cussed in chapter 2.
+
+Next, we implement a utility function to calculate the cross entropy loss of a given
+batch returned via the training and validation loader:
+
+```python
+def calc_loss_batch(input_batch, target_batch, model, device):
+    input_batch = input_batch.to(device)
+    target_batch = target_batch.to(device)
+    logits = model(input_batch)
+    loss = torch.nn.functional.cross_entropy(
+        logits.flatten(0, 1), target_batch.flatten()
+    )
+    return loss
+```
+We can now use this calc_loss_batch utility function, which computes the loss for a
+single batch, to implement the following calc_loss_loader function that computes
+the loss over all the batches sampled by a given data loader.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image92.png?raw=true)
+
+By default, the calc_loss_loader function iterates over all batches in a given data
+loader, accumulates the loss in the total_loss variable, and then computes and
+averages the loss over the total number of batches. Alternatively, we can specify a
+smaller number of batches via num_batches to speed up the evaluation during model
+training.
+Let’s now see this calc_loss_loader function in action, applying it to the training
+and validation set loaders:
+
+```python
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device) #If you have a machine with a CUDA-supported GPU, the LLM will train on the GPU without making any changes to the code.
+with torch.no_grad(): #Disables gradient tracking for efficiency because we are not training yet
+    train_loss = calc_loss_loader(train_loader, model, device) 
+    # Via the “device” setting,we ensure the data is loaded onto the same device as the LLM model.
+    val_loss = calc_loss_loader(val_loader, model, device)
+print("Training loss:", train_loss)
+print("Validation loss:", val_loss)
+
+```
+The resulting loss values are
+Training loss: 10.98758347829183
+Validation loss: 10.98110580444336
+
+The loss values are relatively high because the model has not yet been trained. For
+comparison, the loss approaches 0 if the model learns to generate the next tokens as
+they appear in the training and validation sets.
+Now that we have a way to measure the quality of the generated text, we will train
+the LLM to reduce this loss so that it becomes better at generating text, as illustrated
+in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image93.png?raw=true)
+
+Next, we will focus on pretraining the LLM. After model training, we will implement
+alternative text generation strategies and save and load pretrained model weights.
