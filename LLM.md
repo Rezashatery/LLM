@@ -3084,3 +3084,114 @@ Hello, I am a model ready to help. What happened? The reason the model is unable
 produce coherent text is that we haven’t trained it yet. So far, we have only implemented
 the GPT architecture and initialized a GPT model instance with initial random weights.
 Model training is a large topic in itself, and we will tackle it in the next chapter.
+
+
+
+# Petraining on unlabeled data (CHAPTER 5)
+Thus far, we have implemented the data sampling and attention mechanism and
+coded the LLM architecture. It is now time to implement a training function and
+pretrain the LLM. We will learn about basic model evaluation techniques to mea-
+sure the quality of the generated text, which is a requirement for optimizing the
+LLM during the training process. Moreover, we will discuss how to load pretrained
+weights, giving our LLM a solid starting point for fine-tuning. Figure below lays out
+our overall plan, highlighting what we will discuss in this chapter.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image83.png?raw=true)
+
+**Weight parameters**
+
+In the context of LLMs and other deep learning models, weights refer to the trainable
+parameters that the learning process adjusts. These weights are also known as
+weight parameters or simply parameters. In frameworks like PyTorch, these weights
+are stored in linear layers; we used these to implement the multi-head attention mod-
+ule in chapter 3 and the GPTModel in chapter 4. After initializing a layer (new_layer
+= torch.nn.Linear(...)), we can access its weights through the .weight attri-
+bute, new_layer.weight. Additionally, for convenience, PyTorch allows direct
+access to all a model’s trainable parameters, including weights and biases, through
+the method model.parameters(), which we will use later when implementing the
+model training.
+
+## Evaluating generative text models
+After briefly recapping the text generation from chapter 4, we will set up our LLM for
+text generation and then discuss basic ways to evaluate the quality of the generated text.
+We will then calculate the training and validation losses. Figure below shows the topics
+covered in this chapter, with these first three steps highlighted.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image84.png?raw=true)
+
+## Using GPT to generate text
+Let’s set up the LLM and briefly recap the text generation process we implemented in
+chapter 4. We begin by initializing the GPT model that we will later evaluate and train
+using the GPTModel class and GPT_CONFIG_124M dictionary.
+
+```python
+import torch
+from chapter04 import GPTModel
+GPT_CONFIG_124M = {
+    "vocab_size": 50257,
+    "context_length": 256, # We shorten the context length from 1,024 to 256 tokens.
+    "emb_dim": 768,
+    "n_heads": 12,
+    "n_layers": 12,
+    "drop_rate": 0.1, # It’s possible and common to set dropout to 0.
+    "qkv_bias": False
+}
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG_124M)
+model.eval()
+```
+Considering the GPT_CONFIG_124M dictionary, the only adjustment we have made com-
+pared to the previous chapter is that we have reduced the context length (context_
+length) to 256 tokens. This modification reduces the computational demands of
+training the model, making it possible to carry out the training on a standard laptop
+computer.
+Originally, the GPT-2 model with 124 million parameters was configured to handle
+up to 1,024 tokens. After the training process, we will update the context size setting
+and load pretrained weights to work with a model configured for a 1,024-token con-
+text length.
+Using the GPTModel instance, we adopt the generate_text_simple function from
+chapter 4 and introduce two handy functions: text_to_token_ ids and token_ids_
+to_text. These functions facilitate the conversion between text and token represen-
+tations, a technique we will utilize throughout this chapter.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image85.png?raw=true)
+
+Figure above illustrates a three-step text generation process using a GPT model. First,
+the tokenizer converts input text into a series of token IDs (see chapter 2). Second,
+the model receives these token IDs and generates corresponding logits, which are vec-
+tors representing the probability distribution for each token in the vocabulary (see
+chapter 4). Third, these logits are converted back into token IDs, which the tokenizer
+decodes into human-readable text, completing the cycle from textual input to tex-
+tual output.
+
+We can implement the text generation process, as shown in the following code.
+
+```python
+import tiktoken
+from chapter04 import generate_text_simple
+def text_to_token_ids(text, tokenizer):
+    encoded = tokenizer.encode(text, allowed_special={'<|endoftext|>'})
+    encoded_tensor = torch.tensor(encoded).unsqueeze(0)
+    return encoded_tensor
+def token_ids_to_text(token_ids, tokenizer):
+    flat = token_ids.squeeze(0)
+    return tokenizer.decode(flat.tolist())   
+start_context = "Every effort moves you"
+tokenizer = tiktoken.get_encoding("gpt2")
+    token_ids = generate_text_simple(
+    model=model,
+    idx=text_to_token_ids(start_context, tokenizer),
+    max_new_tokens=10,
+    context_size=GPT_CONFIG_124M["context_length"]
+) 
+print("Output text:\n", token_ids_to_text(token_ids, tokenizer))
+```
+Using this code, the model generates the following text:
+Output text:
+Every effort moves you rentingetic wasn? refres RexMeCHicular stren
+
+Clearly, the model isn’t yet producing coherent text because it hasn’t undergone
+training. To define what makes text “coherent” or “high quality,” we have to imple-
+ment a numerical method to evaluate the generated content. This approach will
+enable us to monitor and enhance the model’s performance throughout its training
+process.
