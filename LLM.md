@@ -4032,3 +4032,119 @@ tensor([0.0615, 0.0000, 0.0000, 0.5775, 0.0000, 0.0000, 0.0000, 0.3610,0.0000])
 We can now apply the temperature scaling and multinomial function for probabilistic
 sampling to select the next token among these three non-zero probability scores to
 generate the next token. We do this next by modifying the text generation function.
+
+
+## Modifying the text generation function
+Now, let’s combine temperature sampling and top-k sampling to modify the generate_
+text_simple function we used to generate text via the LLM earlier, creating a new
+generate function.
+
+```python
+def generate(model, idx, max_new_tokens, context_size,
+            temperature=0.0, top_k=None, eos_id=None):
+    for _ in range(max_new_tokens):
+        idx_cond = idx[:, -context_size:]
+        with torch.no_grad():
+l           logits = model(idx_cond)
+        logits = logits[:, -1, :]
+        if top_k is not None:
+        top_logits, _ = torch.topk(logits, top_k)
+        min_val = top_logits[:, -1]
+        logits = torch.where(
+            logits < min_val,
+            torch.tensor(float('-inf')).to(logits.device),
+            logits
+        )
+        if temperature > 0.0:
+        logits = logits / temperature
+        probs = torch.softmax(logits, dim=-1)
+        idx_next = torch.multinomial(probs, num_samples=1)
+        else:
+        idx_next = torch.argmax(logits, dim=-1, keepdim=True)
+        if idx_next == eos_id:
+        break
+        idx = torch.cat((idx, idx_next), dim=1)
+    return idx            
+```
+Let’s now see this new generate function in action:
+
+```python
+torch.manual_seed(123)
+token_ids = generate(
+    model=model,
+    idx=text_to_token_ids("Every effort moves you", tokenizer),
+    max_new_tokens=15,
+    context_size=GPT_CONFIG_124M["context_length"],
+    top_k=25,
+    temperature=1.4
+)
+print("Output text:\n", token_ids_to_text(token_ids, tokenizer))
+```
+The generated text is
+Output text:
+Every effort moves you stand to work on surprise, a one of us had gone
+with random-
+
+As we can see, the generated text is very different from the one we previously gener-
+ated via the generate_simple function ("Every effort moves you know,"
+was one of the axioms he laid...! ), which was a memorized passage from the train-
+ing set.
+
+## Loading and saving model weights in PyTorch
+Thus far, we have discussed how to numerically evaluate the training progress and pre-
+train an LLM from scratch. Even though both the LLM and dataset were relatively
+small, this exercise showed that pretraining LLMs is computationally expensive. Thus,
+it is important to be able to save the LLM so that we don’t have to rerun the training
+every time we want to use it in a new session.
+Later, we will load a more capable pretrained GPT model from OpenAI into
+our GPTModel instance.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image100.png?raw=true)
+
+Fortunately, saving a PyTorch model is relatively straightforward. The recommended
+way is to save a model’s state_dict, a dictionary mapping each layer to its parameters,
+using the torch.save function:
+torch.save(model.state_dict(), "model.pth")
+
+"model.pth" is the filename where the state_dict is saved. The .pth extension is a
+convention for PyTorch files, though we could technically use any file extension.
+Then, after saving the model weights via the state_dict, we can load the model
+weights into a new GPTModel model instance:
+```python
+model = GPTModel(GPT_CONFIG_124M)
+model.load_state_dict(torch.load("model.pth", map_location=device))
+model.eval()
+```
+As discussed in chapter 4, dropout helps prevent the model from overfitting to the
+training data by randomly “dropping out” of a layer’s neurons during training. How-
+ever, during inference, we don’t want to randomly drop out any of the information
+the network has learned. Using model.eval() switches the model to evaluation mode
+for inference, disabling the dropout layers of the model. If we plan to continue pre-
+training a model later—for example, using the train_model_simple function we
+defined earlier in this chapter—saving the optimizer state is also recommended.
+Adaptive optimizers such as AdamW store additional parameters for each model
+weight. AdamW uses historical data to adjust learning rates for each model parameter
+dynamically. Without it, the optimizer resets, and the model may learn suboptimally
+or even fail to converge properly, which means it will lose the ability to generate coher-
+ent text. Using torch.save, we can save both the model and optimizer state_dict
+contents:
+
+```python
+torch.save({
+    "model_state_dict": model.state_dict(),
+    "optimizer_state_dict": optimizer.state_dict(),
+    },
+   "model_and_optimizer.pth"
+)
+```
+Then we can restore the model and optimizer states by first loading the saved data via
+torch.load and then using the load_state_dict method:
+
+```python
+checkpoint = torch.load("model_and_optimizer.pth", map_location=device)
+model = GPTModel(GPT_CONFIG_124M)
+model.load_state_dict(checkpoint["model_state_dict"])
+optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=0.1)
+optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+model.train();
+```
