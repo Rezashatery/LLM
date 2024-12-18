@@ -3829,3 +3829,145 @@ As illustrated in figure 5.13, we have completed four of our objectives for this
 Next, we will cover text generation strategies for LLMs to reduce training data memo-
 rization and increase the originality of the LLM-generated text before we cover weight
 loading and saving and loading pretrained weights from OpenAI’s GPT model.
+
+## Decoding strategies to control randomness
+
+We begin by transferring the model back from the GPU to the CPU since infer-
+ence with a relatively small model does not require a GPU. Also, after training, we put
+the model into evaluation mode to turn off random components such as dropout:
+model.to("cpu")
+model.eval()
+
+Next, we plug the GPTModel instance (model) into the generate_text_simple func-
+tion, which uses the LLM to generate one token at a time:
+
+```python
+tokenizer = tiktoken.get_encoding("gpt2")
+token_ids = generate_text_simple(
+    model=model,
+    idx=text_to_token_ids("Every effort moves you", tokenizer),
+    max_new_tokens=25,
+    context_size=GPT_CONFIG_124M["context_length"]
+)
+print("Output text:\n", token_ids_to_text(token_ids, tokenizer))
+```
+
+The generated text is
+Output text:
+Every effort moves you know," was one of the axioms he laid down across the
+Sevres and silver of an exquisitely appointed lun
+
+As explained earlier, the generated token is selected at each generation step corre-
+sponding to the largest probability score among all tokens in the vocabulary. This
+means that the LLM will always generate the same outputs even if we run the preced-
+ing generate_text_simple function multiple times on the same start context (Every
+effort moves you).
+
+## Temperature scaling
+Let’s now look at temperature scaling, a technique that adds a probabilistic selection
+process to the next-token generation task. Previously, inside the generate_text_simple
+function, we always sampled the token with the highest probability as the next token
+using torch.argmax, also known as greedy decoding. To generate text with more variety,
+we can replace argmax with a function that samples from a probability distribution
+(here, the probability scores the LLM generates for each vocabulary entry at each
+token generation step).
+To illustrate the probabilistic sampling with a concrete example, let’s briefly dis-
+cuss the next-token generation process using a very small vocabulary for illustration
+purposes:
+```python
+vocab = {
+"closer": 0,
+"every": 1,
+"effort": 2,
+"forward": 3,
+"inches": 4,
+"moves": 5,
+"pizza": 6,
+"toward": 7,
+"you": 8,
+}
+inverse_vocab = {v: k for k, v in vocab.items()}
+
+```
+
+Next, assume the LLM is given the start context "every effort moves you" and gener-
+ates the following next-token logits:
+
+next_token_logits = torch.tensor(
+[4.51, 0.89, -1.90, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79]
+)
+
+As discussed in chapter 4, inside generate_text_simple, we convert the logits into
+probabilities via the softmax function and obtain the token ID corresponding to the
+generated token via the argmax function, which we can then map back into text via
+the inverse vocabulary:
+
+```python
+probas = torch.softmax(next_token_logits, dim=0)
+next_token_id = torch.argmax(probas).item()
+print(inverse_vocab[next_token_id])
+```
+Since the largest logit value and, correspondingly, the largest softmax probability
+score are in the fourth position (index position 3 since Python uses 0 indexing), the
+generated word is "forward".
+To implement a probabilistic sampling process, we can now replace argmax with
+the multinomial function in PyTorch:
+
+```python
+torch.manual_seed(123)
+next_token_id = torch.multinomial(probas, num_samples=1).item()
+print(inverse_vocab[next_token_id])
+```
+The printed output is "forward" just like before. What happened? The multinomial
+function samples the next token proportional to its probability score.
+
+We can further control the distribution and selection process via a concept called
+temperature scaling. Temperature scaling is just a fancy description for dividing the logits
+by a number greater than 0:
+```python
+def softmax_with_temperature(logits, temperature):
+scaled_logits = logits / temperature
+return torch.softmax(scaled_logits, dim=0)
+```
+Temperatures greater than 1 result in more uniformly distributed token probabilities,
+and temperatures smaller than 1 will result in more confident (sharper or more peaky)
+distributions. Let’s illustrate this by plotting the original probabilities alongside proba-
+bilities scaled with different temperature values:
+```python
+temperatures = [1, 0.1, 5]
+scaled_probas = [softmax_with_temperature(next_token_logits, T)
+                for T in temperatures]
+x = torch.arange(len(vocab))
+bar_width = 0.15
+fig, ax = plt.subplots(figsize=(5, 3))
+for i, T in enumerate(temperatures):
+         = ax.bar(x + i * bar_width, scaled_probas[i],
+                bar_width, label=f'Temperature = {T}')
+ax.set_ylabel('Probability')
+ax.set_xticks(x)
+ax.set_xticklabels(vocab.keys(), rotation=90)
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+The resulting plot is shown in figure below.
+A temperature of 1 divides the logits by 1 before passing them to the softmax func-
+tion to compute the probability scores. In other words, using a temperature of 1 is the
+same as not using any temperature scaling. In this case, the tokens are selected with a
+probability equal to the original softmax probability scores via the multinomial sam-
+pling function in PyTorch. For example, for the temperature setting 1, the token cor-
+responding to “forward” would be selected about 60% of the time, as we can see in
+figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image98.png?raw=true)
+
+A temperature of 1 represents the unscaled probability
+scores for each token in the vocabulary. Decreasing the temperature to
+0.1 sharpens the distribution, so the most likely token (here, “forward”)
+will have an even higher probability score. Likewise, increasing the
+temperature to 5 makes the distribution more uniform.
+This can add more
+variety to the generated texts but also more often results in nonsensical text. For
+example, using the temperature of 5 results in texts such as every effort moves you
+pizza about 4% of the time.
