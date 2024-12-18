@@ -3971,3 +3971,64 @@ This can add more
 variety to the generated texts but also more often results in nonsensical text. For
 example, using the temperature of 5 results in texts such as every effort moves you
 pizza about 4% of the time.
+
+
+## Top-k sampling
+We’ve now implemented a probabilistic sampling approach coupled with temperature
+scaling to increase the diversity of the outputs. We saw that higher temperature values
+result in more uniformly distributed next-token probabilities, which result in more
+diverse outputs as it reduces the likelihood of the model repeatedly selecting the most
+probable token. This method allows for the exploring of less likely but potentially
+more interesting and creative paths in the generation process. However, one down-
+side of this approach is that it sometimes leads to grammatically incorrect or com-
+pletely nonsensical outputs such as every effort moves you pizza.
+Top-k sampling, when combined with probabilistic sampling and temperature scal-
+ing, can improve the text generation results. In top-k sampling, we can restrict the
+sampled tokens to the top-k most likely tokens and exclude all other tokens from the
+selection process by masking their probability scores, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image99.png?raw=true)
+Using top-k sampling with k = 3, we focus on the three tokens associated with the highest logits
+and mask out all other tokens with negative infinity (–inf) before applying the softmax function. This results in a probability distribution with a probability value 0 assigned to all non-top-k tokens. (The numbers in this figure are truncated to two digits after the decimal point to reduce visual clutter. The values in the “Softmax” row should add up to 1.0.)
+
+In code, we can implement the top-k procedure in figure above as follows, starting
+with the selection of the tokens with the largest logit values:
+
+```python
+top_k = 3
+top_logits, top_pos = torch.topk(next_token_logits, top_k)
+print("Top logits:", top_logits)
+print("Top positions:", top_pos)
+```
+The logits values and token IDs of the top three tokens, in descending order, are
+Top logits: tensor([6.7500, 6.2800, 4.5100])
+Top positions: tensor([3, 7, 0])
+
+Subsequently, we apply PyTorch’s where function to set the logit values of tokens that are
+below the lowest logit value within our top-three selection to negative infinity (-inf):
+```python
+new_logits = torch.where(
+    condition=next_token_logits < top_logits[-1],  # Identifies logits less than the minimum in the top 3
+    input=torch.tensor(float('-inf')), #Assigns –inf to these lower logits
+    other=next_token_logits # Retains the original logits for all other tokens
+)
+print(new_logits)
+```
+
+The resulting logits for the next token in the nine-token vocabulary are
+
+tensor([4.5100, -inf, -inf, 6.7500, -inf, -inf,-inf, 6.2800,-inf])
+
+Lastly, let’s apply the softmax function to turn these into next-token probabilities:
+
+```python
+topk_probas = torch.softmax(new_logits, dim=0)
+print(topk_probas)
+```
+As we can see, the result of this top-three approach are three non-zero probability
+scores:
+tensor([0.0615, 0.0000, 0.0000, 0.5775, 0.0000, 0.0000, 0.0000, 0.3610,0.0000])
+
+We can now apply the temperature scaling and multinomial function for probabilistic
+sampling to select the next token among these three non-zero probability scores to
+generate the next token. We do this next by modifying the text generation function.
