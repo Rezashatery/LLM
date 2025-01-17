@@ -4707,3 +4707,150 @@ The following text 'spam'? Answer with 'yes' or 'no': 'You are a winner
 Based on the output, it’s apparent that the model is struggling to follow instructions.
 This result is expected, as it has only undergone pretraining and lacks instruction
 fine-tuning. So, let’s prepare the model for classification fine-tuning.
+
+
+## Adding a classification head
+
+We must modify the pretrained LLM to prepare it for classification fine-tuning. To do
+so, we replace the original output layer, which maps the hidden representation to a
+vocabulary of 50,257, with a smaller output layer that maps to two classes: 0 (“not
+spam”) and 1 (“spam”), as shown in figure below. We use the same model as before, except
+we replace the output layer.
+
+### Output layer nodes
+We could technically use a single output node since we are dealing with a binary clas-
+sification task. However, it would require modifying the loss function, as I discuss in
+“Losses Learned—Optimizing Negative Log-Likelihood and Cross-Entropy in PyTorch”.
+Therefore, we choose a more general approach, where the
+number of output nodes matches the number of classes. For example, for a three-
+class problem, such as classifying news articles as “Technology,” “Sports,” or “Pol-
+itics,” we would use three output nodes, and so forth.
+
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image112.png?raw=true)
+
+This output neatly lays out the architecture we laid out in chapter 4. As previously dis-
+cussed, the GPTModel consists of embedding layers followed by 12 identical transformer
+blocks (only the last block is shown for brevity), followed by a final LayerNorm and the
+output layer, out_head.
+Next, we replace the out_head with a new output layer that we will fine-tune.
+
+### Fine-tuning selected layers vs. all layers
+Since we start with a pretrained model, it’s not necessary to fine-tune all model layers.
+In neural network-based language models, the lower layers generally capture basic lan-
+guage structures and semantics applicable across a wide range of tasks and datasets.
+So, fine-tuning only the last layers (i.e., layers near the output), which are more specific
+to nuanced linguistic patterns and task-specific features, is often sufficient to adapt the
+model to new tasks. A nice side effect is that it is computationally more efficient to fine-
+tune only a small number of layers.
+
+To get the model ready for classification fine-tuning, we first freeze the model, meaning
+that we make all layers nontrainable:
+
+```python
+for param in model.parameters():
+param.requires_grad = False
+```
+Then, we replace the output layer (model.out_head), which originally maps the layer
+inputs to 50,257 dimensions, the size of the vocabulary (see figure above).
+
+```python
+torch.manual_seed(123)
+num_classes = 2
+model.out_head = torch.nn.Linear(
+    n_features=BASE_CONFIG["emb_dim"],
+    out_features=num_classes
+)
+```
+
+To keep the code more general, we use BASE_CONFIG["emb_dim"], which is equal to
+768 in the "gpt2-small (124M)" model. Thus, we can also use the same code to work
+with the larger GPT-2 model variants.
+This new model.out_head output layer has its requires_grad attribute set to
+True by default, which means that it’s the only layer in the model that will be
+updated during training. Technically, training the output layer we just added is suffi-
+cient. However, as I found in experiments, fine-tuning additional layers can notice-
+ably improve the predictive performance of the model. We also configure the last transformer block and the final LayerNorm
+module, which connects this block to the output layer, to be trainable, as depicted
+in figure below.
+To make the final LayerNorm and last transformer block trainable, we set their
+respective requires_grad to True:
+
+```python
+for param in model.trf_blocks[-1].parameters():
+    param.requires_grad = True
+for param in model.final_norm.parameters():
+    param.requires_grad = True
+```
+Even though we added a new output layer and marked certain layers as trainable or
+nontrainable, we can still use this model similarly to how we have previously.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image113.png?raw=true)
+
+For instance, we can feed it an example text identical to our previously used example
+text:
+
+```python
+inputs = tokenizer.encode("Do you have time")
+inputs = torch.tensor(inputs).unsqueeze(0)
+print("Inputs:", inputs)
+print("Inputs dimensions:", inputs.shape)
+```
+The print output shows that the preceding code encodes the inputs into a tensor con-
+sisting of four input tokens:
+
+Inputs: tensor([[5211, 345, 423, 640]])
+Inputs dimensions: torch.Size([1, 4])
+
+Then, we can pass the encoded token IDs to the model as usual:
+```python
+with torch.no_grad():
+    outputs = model(inputs)
+print("Outputs:\n", outputs)
+print("Outputs dimensions:", outputs.shape)
+```
+
+A similar input would have previously produced an output tensor of [1, 4, 50257],
+where 50257 represents the vocabulary size. The number of output rows corresponds
+to the number of input tokens (in this case, four). However, each output’s embedding
+dimension (the number of columns) is now 2 instead of 50,257 since we replaced the
+output layer of the model.
+Remember that we are interested in fine-tuning this model to return a class label
+indicating whether a model input is “spam” or “not spam.” We don’t need to fine-
+tune all four output rows; instead, we can focus on a single output token. In particu-
+lar, we will focus on the last row corresponding to the last output token, as shown in
+figure below.
+To extract the last output token from the output tensor, we use the following code:
+```python
+print("Last output token:", outputs[:, -1, :])
+```
+This prints:
+
+Last output token: tensor([[-3.5983, 3.9902]])
+
+We still need to convert the values into a class-label prediction. But first, let’s under-
+stand why we are particularly interested in the last output token only.
+We have already explored the attention mechanism, which establishes a relationship
+between each input token and every other input token, and the concept of a causal
+attention mask, commonly used in GPT-like models . This mask restricts a
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image114.png?raw=true)
+
+token’s focus to its current position and the those before it, ensuring that each token
+can only be influenced by itself and the preceding tokens, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image115.png?raw=true)
+
+The causal attention mechanism, where the attention scores between input tokens are displayed in a
+matrix format. The empty cells indicate masked positions due to the causal attention
+mask, preventing tokens from attending to future tokens. The values in the cells
+represent attention scores; the last token, time, is the only one that computes
+attention scores for all preceding tokens.
+
+Given the causal attention mask setup in figure above, the last token in a sequence accu-
+mulates the most information since it is the only token with access to data from all the
+previous tokens. Therefore, in our spam classification task, we focus on this last token
+during the fine-tuning process.
+We are now ready to transform the last token into class label predictions and calcu-
+late the model’s initial prediction accuracy. Subsequently, we will fine-tune the model
+for the spam classification task.
