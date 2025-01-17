@@ -5007,3 +5007,79 @@ Test loss: 2.322
 Next, we will implement a training function to fine-tune the model, which means
 adjusting the model to minimize the training set loss. Minimizing the training set loss
 will help increase the classification accuracy, which is our overall goal.
+
+
+
+
+## Fine-tuning the model on supervised data
+We must define and use the training function to fine-tune the pretrained LLM and
+improve its spam classification accuracy. The training loop, illustrated in figure below,
+is the same overall training loop we used for pretraining; the only difference is that
+we calculate the classification accuracy instead of generating a sample text to evalu-
+ate the model.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image117.png?raw=true)
+
+The training function implementing the concepts shown in figure above also closely mir-
+rors the train_model_simple function used for pretraining the model. The only two dis-
+tinctions are that we now track the number of training examples seen (examples_seen)
+instead of the number of tokens, and we calculate the accuracy after each epoch instead
+of printing a sample text.
+
+Figure below plots the resulting loss curves.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image118.png?raw=true)
+
+As we can see based on the sharp downward slope in figure above, the model is learning
+well from the training data, and there is little to no indication of overfitting; that is,
+there is no noticeable gap between the training and validation set losses.
+
+### Choosing the number of epochs
+Earlier, when we initiated the training, we set the number of epochs to five. The num-
+ber of epochs depends on the dataset and the task’s difficulty, and there is no uni-
+versal solution or recommendation, although an epoch number of five is usually a
+good starting point. If the model overfits after the first few epochs as a loss plot (see
+figure above), you may need to reduce the number of epochs. Conversely, if the trend-
+line suggests that the validation loss could improve with further training, you should
+increase the number of epochs. In this concrete case, five epochs is a reasonable
+number as there are no signs of early overfitting, and the validation loss is close to 0.
+
+when using the train_classifier_simple function, which means our estimations of
+training and validation performance are based on only five batches for efficiency
+during training.
+Now we must calculate the performance metrics for the training, validation, and
+test sets across the entire dataset by running the following code, this time without
+defining the eval_iter value:
+
+```python
+train_accuracy = calc_accuracy_loader(train_loader, model, device)
+val_accuracy = calc_accuracy_loader(val_loader, model, device)
+test_accuracy = calc_accuracy_loader(test_loader, model, device)
+print(f"Training accuracy: {train_accuracy*100:.2f}%")
+print(f"Validation accuracy: {val_accuracy*100:.2f}%")
+print(f"Test accuracy: {test_accuracy*100:.2f}%")
+```
+The resulting accuracy values are:
+
+Training accuracy: 97.21%
+Validation accuracy: 97.32%
+Test accuracy: 95.67%
+
+The training and test set performances are almost identical. The slight discrepancy
+between the training and test set accuracies suggests minimal overfitting of the train-
+ing data. Typically, the validation set accuracy is somewhat higher than the test set
+accuracy because the model development often involves tuning hyperparameters to
+perform well on the validation set, which might not generalize as effectively to the test
+set. This situation is common, but the gap could potentially be minimized by adjusting
+the model’s settings, such as increasing the dropout rate (drop_rate) or the weight_
+decay parameter in the optimizer configuration.
+
+## Using the LLM as a spam classifier
+Having fine-tuned and evaluated the model, we are now ready to classify spam mes-
+sages (see figure below). Let’s use our fine-tuned GPT-based spam classification model.
+The following classify_review function follows data preprocessing steps similar
+to those we used in the SpamDataset implemented earlier. Then, after processing
+text into token IDs, the function uses the model to predict an integer class label,
+similar to what we implemented in section before, and then returns the corresponding
+class name.
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image119.png?raw=true)
