@@ -4465,3 +4465,148 @@ Let’s save the dataset as CSV (comma-separated value) files so we can reuse it
 train_df.to_csv("train.csv", index=None)
 validation_df.to_csv("validation.csv", index=None)
 test_df.to_csv("test.csv", index=None)
+```
+
+
+## Creating data loaders
+
+We will develop PyTorch data loaders conceptually similar to those we implemented
+while working with text data. Previously, we utilized a sliding window technique to
+generate uniformly sized text chunks, which we then grouped into batches for more
+efficient model training. Each chunk functioned as an individual training instance.
+However, we are now working with a spam dataset that contains text messages of vary-
+ing lengths. To batch these messages as we did with the text chunks, we have two pri-
+mary options:
+
+1) Truncate all messages to the length of the shortest message in the dataset or batch.
+2) Pad all messages to the length of the longest message in the dataset or batch.
+
+The first option is computationally cheaper, but it may result in significant informa-
+tion loss if shorter messages are much smaller than the average or longest messages,
+
+potentially reducing model performance. So, we opt for the second option, which
+preserves the entire content of all messages.
+To implement batching, where all messages are padded to the length of the lon-
+gest message in the dataset, we add padding tokens to all shorter messages. For this
+purpose, we use "<|endoftext|>" as a padding token.
+However, instead of appending the string "<|endoftext|>" to each of the text
+messages directly, we can add the token ID corresponding to "<|endoftext|>" to the
+encoded text messages, as illustrated in figure below. 50256 is the token ID of the padding
+token "<|endoftext|>". We can double-check whether the token ID is correct by
+encoding the "<|endoftext|>" using the GPT-2 tokenizer from the tiktoken package
+that we used previously:
+
+```python
+import tiktoken
+tokenizer = tiktoken.get_encoding("gpt2")
+print(tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"}))
+```
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image107.png?raw=true)
+
+Indeed, executing the preceding code returns [50256].
+We first need to implement a PyTorch Dataset, which specifies how the data is
+loaded and processed before we can instantiate the data loaders. For this purpose,
+we define the SpamDataset class, which implements the concepts in figure above. This
+SpamDataset class handles several key tasks: it identifies the longest sequence in the
+training dataset, encodes the text messages, and ensures that all other sequences are
+padded with a padding token to match the length of the longest sequence.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image108.png?raw=true)
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image109.png?raw=true)
+
+The SpamDataset class loads data from the CSV files we created earlier, tokenizes
+the text using the GPT-2 tokenizer from tiktoken, and allows us to pad or truncate
+the sequences to a uniform length determined by either the longest sequence or a
+predefined maximum length. This ensures each input tensor is of the same size,
+which is necessary to create the batches in the training data loader we implement
+next:
+
+```python
+train_dataset = SpamDataset(
+    csv_file="train.csv",
+    max_length=None,
+    tokenizer=tokenizer
+)
+```
+The longest sequence length is stored in the dataset’s max_length attribute. If you are
+curious to see the number of tokens in the longest sequence, you can use the follow-
+ing code:
+
+```python
+print(train_dataset.max_length)
+```
+The code outputs 120, showing that the longest sequence contains no more than
+120 tokens, a common length for text messages. The model can handle sequences
+of up to 1,024 tokens, given its context length limit. If your dataset includes longer
+texts, you can pass max_length=1024 when creating the training dataset in the pre-
+ceding code to ensure that the data does not exceed the model’s supported input
+(context) length.
+Next, we pad the validation and test sets to match the length of the longest train-
+ing sequence. Importantly, any validation and test set samples exceeding the length of
+the longest training example are truncated using encoded_text[:self.max_length]
+in the SpamDataset code we defined earlier. This truncation is optional; you can set
+max_length=None for both validation and test sets, provided there are no sequences
+exceeding 1,024 tokens in these sets:
+
+```python
+val_dataset = SpamDataset(
+    csv_file="validation.csv",
+    max_length=train_dataset.max_length,
+    tokenizer=tokenizer
+)
+test_dataset = SpamDataset(
+    csv_file="test.csv",
+    max_length=train_dataset.max_length,
+    tokenizer=tokenizer
+)
+```
+Using the datasets as inputs, we can instantiate the data loaders similarly to when we
+were working with text data. However, in this case, the targets represent class labels
+rather than the next tokens in the text. For instance, if we choose a batch size of 8,
+each batch will consist of eight training examples of length 120 and the correspond-
+ing class label of each example, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image110.png?raw=true)
+
+
+```python
+from torch.utils.data import DataLoader
+num_workers = 0
+batch_size = 8
+torch.manual_seed(123)
+
+train_loader = DataLoader(
+    dataset=train_dataset,
+    batch_size=batch_size,
+    shuffle=True,
+    num_workers=num_workers,
+    drop_last=True,
+)
+val_loader = DataLoader(
+    dataset=val_dataset,
+    batch_size=batch_size,
+    num_workers=num_workers,
+    drop_last=False,
+)
+test_loader = DataLoader(
+    dataset=test_dataset,
+    batch_size=batch_size,
+    num_workers=num_workers,
+    drop_last=False,
+)
+
+```
+Lastly, to get an idea of the dataset size, let’s print the total number of batches in
+each dataset:
+
+```python
+print(f"{len(train_loader)} training batches")
+print(f"{len(val_loader)} validation batches")
+print(f"{len(test_loader)} test batches")
+```
+The number of batches in each dataset are
+130 training batches
+19 validation batches
+38 test batches
