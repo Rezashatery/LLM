@@ -4388,3 +4388,80 @@ While instruction fine-tuning is more versatile, it demands larger datasets and 
 computational resources to develop models proficient in various tasks. In contrast,
 classification fine-tuning requires less data and compute power, but its use is con-
 fined to the specific classes on which the model has been trained.
+
+
+
+## Preparing the dataset
+
+We will modify and classification fine-tune the GPT model we previously implemented
+and pretrained. We begin by downloading and preparing the dataset, as highlighted
+in figure below. To provide an intuitive and useful example of classification fine-tuning,
+we will work with a text message dataset that consists of spam and non-spam messages.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image105.png?raw=true)
+
+The first step is to download the dataset. SMSSpamCollection.tsv, in the sms_spam_collection folder. 
+We can load it into a  pandas DataFrame as follows:
+
+```python
+import pandas as pd
+df = pd.read_csv(
+data_file_path, sep="\t", header=None, names=["Label", "Text"]
+)
+df
+```
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image106.png?raw=true)
+
+Let’s examine the class label distribution:
+print(df["Label"].value_counts())
+
+Executing the previous code, we find that the data contains “ham” (i.e., not spam) far
+more frequently than “spam”:
+
+Label
+ham    4825
+spam   747
+
+For simplicity, and because we prefer a small dataset (which will facilitate faster fine-
+tuning of the LLM), we choose to undersample the dataset to include 747 instances
+from each class.
+We can use the code in the following listing to undersample and create a balanced
+dataset.
+
+```python
+def create_balanced_dataset(df):
+    num_spam = df[df["Label"] == "spam"].shape[0]
+    ham_subset = df[df["Label"] == "ham"].sample(
+    num_spam, random_state=123
+    )
+    balanced_df = pd.concat([
+        ham_subset, df[df["Label"] == "spam"]
+])
+    return balanced_df
+
+balanced_df = create_balanced_dataset(df)
+print(balanced_df["Label"].value_counts())
+
+```
+Label
+ham    747
+spam   747
+
+Next, we convert the “string” class labels "ham" and "spam" into integer class labels 0
+and 1, respectively:
+```python
+balanced_df["Label"] = balanced_df["Label"].map({"ham": 0, "spam": 1})
+```
+This process is similar to converting text into token IDs. However, instead of using the
+GPT vocabulary, which consists of more than 50,000 words, we are dealing with just
+two token IDs: 0 and 1.
+Next, we create a random_split function to split the dataset into three parts: 70%
+for training, 10% for validation, and 20% for testing. (These ratios are common in
+machine learning to train, adjust, and evaluate models.)
+
+Let’s save the dataset as CSV (comma-separated value) files so we can reuse it later:
+```python
+train_df.to_csv("train.csv", index=None)
+validation_df.to_csv("validation.csv", index=None)
+test_df.to_csv("test.csv", index=None)
