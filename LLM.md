@@ -4337,3 +4337,54 @@ We can be confident that we loaded the model weights correctly because the model
 produce coherent text. A tiny mistake in this process would cause the model to fail. In
 the following chapters, we will work further with this pretrained model and fine-tune it
 to classify text and follow instructions.
+
+# CHAPTER 6
+
+So far, we have coded the LLM architecture, pretrained it, and learned how to
+import pretrained weights from an external source, such as OpenAI, into our
+model. Now we will reap the fruits of our labor by fine-tuning the LLM on a specific
+target task, such as classifying text. The concrete example we examine is classifying
+text messages as “spam” or “not spam.” Figure below highlights the two main ways of
+fine-tuning an LLM: fine-tuning for classification (step 8) and fine-tuning to follow
+instructions (step 9).
+
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image102.png?raw=true)
+
+## Different categories of fine-tuning
+
+The most common ways to fine-tune language models are instruction fine-tuning and
+classification fine-tuning. Instruction fine-tuning involves training a language model on
+a set of tasks using specific instructions to improve its ability to understand and exe-
+cute tasks described in natural language prompts, as illustrated in figure below
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image103.png?raw=true)
+
+Two different instruction fine-tuning scenarios. At the top, the model is tasked with determining
+whether a given text is spam. At the bottom, the model is given an instruction on how to translate an English
+sentence into German.
+
+In classification fine-tuning, a concept you might already be acquainted with if you
+have a background in machine learning, the model is trained to recognize a specific 
+set of class labels, such as “spam” and “not spam.” Examples of classification tasks extend
+beyond LLMs and email filtering: they include identifying different species of plants
+from images; categorizing news articles into topics like sports, politics, and technology;
+and distinguishing between benign and malignant tumors in medical imaging.
+The key point is that a classification fine-tuned model is restricted to predicting
+classes it has encountered during its training. For instance, it can determine whether
+something is “spam” or “not spam,” as illustrated in figure below, but it can’t say anything
+else about the input text.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image104.png?raw=true)
+
+### Choosing the right approach
+Instruction fine-tuning improves a model’s ability to understand and generate responses
+based on specific user instructions. Instruction fine-tuning is best suited for models
+that need to handle a variety of tasks based on complex user instructions, improving
+flexibility and interaction quality. Classification fine-tuning is ideal for projects requir-
+ing precise categorization of data into predefined classes, such as sentiment analy-
+sis or spam detection.
+While instruction fine-tuning is more versatile, it demands larger datasets and greater
+computational resources to develop models proficient in various tasks. In contrast,
+classification fine-tuning requires less data and compute power, but its use is con-
+fined to the specific classes on which the model has been trained.
