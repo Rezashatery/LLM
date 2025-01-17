@@ -4610,3 +4610,100 @@ The number of batches in each dataset are
 130 training batches
 19 validation batches
 38 test batches
+
+
+
+
+## Initializing a model with pretrained weights
+We must prepare the model for classification fine-tuning to identify spam messages.
+We start by initializing our pretrained model, as highlighted in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image111.png?raw=true)
+
+To begin the model preparation process, we employ the same configurations we used
+to pretrain unlabeled data:
+
+```python
+CHOOSE_MODEL = "gpt2-small (124M)"
+INPUT_PROMPT = "Every effort moves"
+BASE_CONFIG = {
+    "vocab_size": 50257,
+    "context_length": 1024,
+    "drop_rate": 0.0,
+    "qkv_bias": True
+}
+
+model_configs = {
+    "gpt2-small (124M)": {"emb_dim": 768, "n_layers": 12, "n_heads": 12},
+    "gpt2-medium (355M)": {"emb_dim": 1024, "n_layers": 24, "n_heads": 16},
+    "gpt2-large (774M)": {"emb_dim": 1280, "n_layers": 36, "n_heads": 20},
+    "gpt2-xl (1558M)": {"emb_dim": 1600, "n_layers": 48, "n_heads": 25},
+}
+BASE_CONFIG.update(model_configs[CHOOSE_MODEL])
+
+```
+
+Next, we import the download_and_load_gpt2 function from the gpt_download.py
+file and reuse the GPTModel class and load_weights_into_gpt function from pretrain-
+ing to load the downloaded weights into the GPT model.
+
+```python
+from gpt_download import download_and_load_gpt2
+from chapter05 import GPTModel, load_weights_into_gpt
+model_size = CHOOSE_MODEL.split(" ")[-1].lstrip("(").rstrip(")")
+settings, params = download_and_load_gpt2(
+    model_size=model_size, models_dir="gpt2"
+)
+model = GPTModel(BASE_CONFIG)
+load_weights_into_gpt(model, params)
+model.eval()
+```
+After loading the model weights into the GPTModel, we reuse the text generation utility 
+function to ensure that the model generates coherent text:
+
+```python
+from chapter04 import generate_text_simple
+from chapter05 import text_to_token_ids, token_ids_to_text
+text_1 = "Every effort moves you"
+token_ids = generate_text_simple(
+    model=model,
+    idx=text_to_token_ids(text_1, tokenizer),
+    max_new_tokens=15,
+    context_size=BASE_CONFIG["context_length"]
+)
+print(token_ids_to_text(token_ids, tokenizer))
+```
+The following output shows the model generates coherent text, which is indicates that
+the model weights have been loaded correctly:
+
+Every effort moves you forward.
+The first step is to understand the importance of your work
+
+Before we start fine-tuning the model as a spam classifier, let’s see whether the model
+already classifies spam messages by prompting it with instructions:
+
+```python
+text_2 = (
+    "Is the following text 'spam'? Answer with 'yes' or 'no':"
+    " 'You are a winner you have been specially"
+    " selected to receive $1000 cash or a $2000 award.'"
+)
+token_ids = generate_text_simple(
+    model=model,
+    idx=text_to_token_ids(text_2, tokenizer),
+    max_new_tokens=23,
+    context_size=BASE_CONFIG["context_length"]
+)
+print(token_ids_to_text(token_ids, tokenizer))
+```
+
+The model output is:
+
+Is the following text 'spam'? Answer with 'yes' or 'no': 'You are a winner
+you have been specially selected to receive $1000 cash
+or a $2000 award.'
+The following text 'spam'? Answer with 'yes' or 'no': 'You are a winner
+
+Based on the output, it’s apparent that the model is struggling to follow instructions.
+This result is expected, as it has only undergone pretraining and lacks instruction
+fine-tuning. So, let’s prepare the model for classification fine-tuning.
