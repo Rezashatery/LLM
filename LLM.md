@@ -5948,3 +5948,175 @@ The output shows that the model_response has been added correctly:
 'output': 'The car is as fast as lightning.',
 'model_response': 'The car is as fast as a bullet.'}
 ```
+## Evaluating the fine-tuned LLM
+Previously, we judged the performance of an instruction-fine-tuned model by looking
+at its responses on three examples of the test set. While this gives us a rough idea of
+how well the model performs, this method does not scale well to larger amounts of
+responses. So, we implement a method to automate the response evaluation of the
+fine-tuned LLM using another, larger LLM, as highlighted in figure below.
+
+To evaluate test set responses in an automated fashion, we utilize an existing
+instruction-fine-tuned 8-billion-parameter Llama 3 model developed by Meta AI. This
+model can be run locally using the open source Ollama application.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image137.png?raw=true)
+
+To execute the following code, install Ollama by visiting https://ollama.com and fol-
+low the provided instructions for your operating system:
+- For macOS and Windows users—Open the downloaded Ollama application. If
+prompted to install command-line usage, select Yes.
+- For Linux users—Use the installation command available on the Ollama website.
+
+An alternative to the ollama run command for interacting with the model is through
+its REST API using Python. The query_model function shown in the following listing
+demonstrates how to use the API.
+
+```python
+import urllib.request
+def query_model(
+prompt,
+model="llama3",
+url="http://localhost:11434/api/chat"
+):
+data = {
+    "model": model,
+    "messages": [
+        {"role": "user", "content": prompt}
+    ],
+    "options": {
+        "seed": 123,
+        "temperature": 0,
+        "num_ctx": 2048
+    }
+}
+payload = json.dumps(data).encode("utf-8")
+request = urllib.request.Request(
+    url,
+    data=payload,
+  
+  method="POST"
+)  
+request.add_header("Content-Type", "application/json")
+response_data = ""
+with urllib.request.urlopen(request) as response:
+    while True:
+        line = response.readline().decode("utf-8")
+        if not line:
+            break
+        response_json = json.loads(line)
+        response_data += response_json["message"]["content"]
+return response_data    
+```
+  
+Before running the subsequent code cells in this notebook, ensure that Ollama is still
+running. The previous code cells should print "Ollama running: True" to confirm
+that the model is active and ready to receive requests.
+The following is an example of how to use the query_model function we just
+implemented:
+```python
+model = "llama3"
+result = query_model("What do Llamas eat?", model)
+print(result)
+```
+Using the query_model function defined earlier, we can evaluate the responses gen-
+erated by our fine-tuned model that prompts the Llama 3 model to rate our fine-
+tuned model’s responses on a scale from 0 to 100 based on the given test set
+response as reference.
+
+First, we apply this approach to the first three examples from the test set that we
+previously examined:
+
+```python
+for entry in test_data[:3]:
+    prompt = (
+        f"Given the input `{format_input(entry)}` "
+        f"and correct output `{entry['output']}`, "
+        f"score the model response `{entry['model_response']}`"
+        f" on a scale from 0 to 100, where 100 is the best score. "
+    )   
+    print("\nDataset response:")
+    print(">>", entry['output'])
+    print("\nModel response:")
+    print(">>", entry["model_response"])
+    print("\nScore:")
+    print(">>", query_model(prompt))
+    print("\n-------------------------")
+```
+This code prints outputs similar to the following.
+
+Dataset response:
+>> The car is as fast as lightning.
+
+Model response:
+
+>> The car is as fast as a bullet.
+
+Score:
+
+>> I’d rate the model response “The car is as fast as a bullet.” an 85 out of 100.
+
+Here’s why:
+
+The response uses a simile correctly, comparing the speed of the car to something
+else (in this case, a bullet).
+The comparison is relevant and makes sense, as bullets are known for their high
+velocity.
+The phrase “as fast as” is used correctly to introduce the simile.
+The only reason I wouldn’t give it a perfect score is that some people might find the
+comparison slightly less vivid or evocative than others. For example, comparing
+something to lightning (as in the original response) can be more dramatic and atten-
+tion grabbing. However, “as fast as a bullet” is still a strong and effective simile that
+effectively conveys the idea of the car’s speed.
+
+Overall, I think the model did a great job!
+
+The generated responses show that the Llama 3 model provides reasonable evalua-
+tions and is capable of assigning partial points when a model’s answer is not entirely
+correct. For instance, if we consider the evaluation of the “cumulus cloud” answer, the
+model acknowledges the partial correctness of the response.
+The previous prompt returns highly detailed evaluations in addition to the score.
+We can modify the prompt to just generate integer scores ranging from 0 to 100,
+where 100 represents the best possible score. This modification allows us to calculate
+an average score for our model, which serves as a more concise and quantitative
+assessment of its performance. The generate_model_scores function shown in the
+following listing uses a modified prompt telling the model to "Respond with the
+integer number only."
+
+```python
+def generate_model_scores(json_data, json_key, model="llama3"):
+    scores = []
+    for entry in tqdm(json_data, desc="Scoring entries"):
+        prompt = (
+            f"Given the input `{format_input(entry)}` "
+            f"and correct output `{entry['output']}`, "
+            f"score the model response `{entry[json_key]}`"
+            f" on a scale from 0 to 100, where 100 is the best score. "
+            f"Respond with the integer number only."
+
+        )
+        score = query_model(prompt, model)
+        try:
+            scores.append(int(score))
+        except ValueError:
+            print(f"Could not convert score: {score}")
+            continue
+    return scores
+```
+The evaluation output shows that our fine-tuned model achieves an average score
+above 50, which provides a useful benchmark for comparison against other models
+or for experimenting with different training configurations to improve the model’s
+performance.
+It’s worth noting that Ollama is not entirely deterministic across operating systems
+at the time of this writing, which means that the scores you obtain might vary slightly
+from the previous scores. To obtain more robust results, you can repeat the evaluation
+multiple times and average the resulting scores.
+To further improve our model’s performance, we can explore various strategies,
+such as
+- Adjusting the hyperparameters during fine-tuning, such as the learning rate,
+batch size, or number of epochs
+- Increasing the size of the training dataset or diversifying the examples to cover
+a broader range of topics and styles
+- Experimenting with different prompts or instruction formats to guide the
+model’s responses more effectively
+- Using a larger pretrained model, which may have greater capacity to capture
+complex patterns and generate more accurate responses
