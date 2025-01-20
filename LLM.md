@@ -5814,3 +5814,137 @@ While the loss plot in figure above indicates that the model is training effecti
 most crucial aspect is its performance in terms of response quality and correctness.
 So, next, let’s extract the responses and store them in a format that allows us to evalu-
 ate and quantify the response quality.
+
+
+
+## Extracting and saving responses
+Having fine-tuned the LLM on the training portion of the instruction dataset, we are
+now ready to evaluate its performance on the held-out test set. First, we extract the
+model-generated responses for each input in the test dataset and collect them for
+manual analysis, and then we evaluate the LLM to quantify the quality of the
+responses, as highlighted in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image136.png?raw=true)
+
+To complete the response instruction step, we use the generate function. We then
+print the model responses alongside the expected test set answers for the first three
+test set entries, presenting them side by side for comparison:
+
+```python
+torch.manual_seed(123)
+for entry in test_data[:3]:
+    input_text = format_input(entry)
+    token_ids = generate(
+        model=model,
+        idx=text_to_token_ids(input_text, tokenizer).to(device),
+        max_new_tokens=256,
+        context_size=BASE_CONFIG["context_length"],
+        eos_id=50256
+)
+    generated_text = token_ids_to_text(token_ids, tokenizer)
+    response_text = (
+        generated_text[len(input_text):]
+        .replace("### Response:", "")
+        .strip()
+    )
+    print(input_text)
+    print(f"\nCorrect response:\n>> {entry['output']}")
+    print(f"\nModel response:\n>> {response_text.strip()}")
+    print("-------------------------------------")
+```
+As mentioned earlier, the generate function returns the combined input and output
+text, so we use slicing and the .replace() method on the generated_text contents to
+extract the model’s response. The instructions, followed by the given test set response
+and model response, are shown next.
+
+Most importantly, model evaluation is not as straightforward as it is for completion
+fine-tuning, where we simply calculate the percentage of correct spam/non-spam class
+labels to obtain the classification’s accuracy. In practice, instruction-fine-tuned LLMs
+such as chatbots are evaluated via multiple approaches:
+- Short-answer and multiple-choice benchmarks, such as Measuring Massive Mul-
+titask Language Understanding (MMLU; https://arxiv.org/abs/2009.03300),
+which test the general knowledge of a model.
+- Human preference comparison to other LLMs, such as LMSYS chatbot arena
+(https://arena.lmsys.org).
+- Automated conversational benchmarks, where another LLM like GPT-4 is
+used to evaluate the responses, such as AlpacaEval (https://tatsu-lab.github.io/
+alpaca_eval/).
+
+
+In practice, it can be useful to consider all three types of evaluation methods: multiple-
+choice question answering, human evaluation, and automated metrics that measure
+conversational performance. However, since we are primarily interested in assessing con-
+versational performance rather than just the ability to answer multiple-choice ques-
+tions, human evaluation and automated metrics may be more relevant.
+
+**Conversational performance**
+
+Conversational performance of LLMs refers to their ability to engage in human-like
+communication by understanding context, nuance, and intent. It encompasses skills
+such as providing relevant and coherent responses, maintaining consistency, and
+adapting to different topics and styles of interaction.
+
+Human evaluation, while providing valuable insights, can be relatively laborious and
+time-consuming, especially when dealing with a large number of responses. For
+instance, reading and assigning ratings to all 1,100 responses would require a signifi-
+cant amount of effort.
+
+So, considering the scale of the task at hand, we will implement an approach simi-
+lar to automated conversational benchmarks, which involves evaluating the responses
+automatically using another LLM. This method will allow us to efficiently assess the
+quality of the generated responses without the need for extensive human involve-
+ment, thereby saving time and resources while still obtaining meaningful perfor-
+mance indicators.
+
+Let’s employ an approach inspired by AlpacaEval, using another LLM to evaluate
+our fine-tuned model’s responses. However, instead of relying on a publicly available
+benchmark dataset, we use our own custom test set. This customization allows for a
+more targeted and relevant assessment of the model’s performance within the context
+of our intended use cases, represented in our instruction dataset.
+
+To prepare the responses for this evaluation process, we append the generated
+model responses to the test_set dictionary and save the updated data as an
+"instruction-data-with-response.json" file for record keeping. Additionally, by
+saving this file, we can easily load and analyze the responses in separate Python ses-
+sions later on if needed.
+
+The following code listing uses the generate method in the same manner as
+before; however, we now iterate over the entire test_set. Also, instead of printing the
+model responses, we add them to the test_set dictionary.
+
+```python
+from tqdm import tqdm
+for i, entry in tqdm(enumerate(test_data), total=len(test_data)):
+    input_text = format_input(entry)
+    token_ids = generate(
+        model=model,
+        idx=text_to_token_ids(input_text, tokenizer).to(device),
+        max_new_tokens=256,
+        context_size=BASE_CONFIG["context_length"],
+        eos_id=50256
+    )
+    generated_text = token_ids_to_text(token_ids, tokenizer)
+    response_text = (
+        generated_text[len(input_text):]
+        .replace("### Response:", "")
+        .strip()
+    )
+    test_data[i]["model_response"] = response_text
+with open("instruction-data-with-response.json", "w") as file:
+    json.dump(test_data, file, indent=4)
+```
+Processing the dataset takes about 1 minute on an A100 GPU and 6 minutes on an M3
+MacBook Air.
+
+Let’s verify that the responses have been correctly added to the test_set dictionary
+by examining one of the entries:
+```python
+print(test_data[0])
+```
+The output shows that the model_response has been added correctly:
+```python
+{'instruction': 'Rewrite the sentence using a simile.',
+'input': 'The car is very fast.',
+'output': 'The car is as fast as lightning.',
+'model_response': 'The car is as fast as a bullet.'}
+```
