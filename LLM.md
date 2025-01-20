@@ -5083,3 +5083,155 @@ text into token IDs, the function uses the model to predict an integer class lab
 similar to what we implemented in section before, and then returns the corresponding
 class name.
 ![alt text](https://github.com/Rezashatery/LLM/blob/main/image119.png?raw=true)
+
+# Fine-tuning to follow instructions (CHAPTER 7)
+
+Previously, we implemented the LLM architecture, carried out pretraining, and
+imported pretrained weights from external sources into our model. Then, we
+focused on fine-tuning our LLM for a specific classification task: distinguishing
+between spam and non-spam text messages. Now we’ll implement the process for
+fine-tuning an LLM to follow human instructions, as illustrated in figure below.
+Instruction fine-tuning is one of the main techniques behind developing LLMs for
+chatbot applications, personal assistants, and other conversational tasks.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image120.png?raw=true)
+
+## Introduction to instruction fine-tuning
+We now know that pretraining an LLM involves a training procedure where it learns
+to generate one word at a time. The resulting pretrained LLM is capable of text comple-
+tion, meaning it can finish sentences or write text paragraphs given a fragment as
+input. However, pretrained LLMs often struggle with specific instructions, such as “Fix
+the grammar in this text” or “Convert this text into passive voice.” Later, we will exam-
+ine a concrete example where we load the pretrained LLM as the basis for instruction
+fine-tuning, also known as supervised instruction fine-tuning.
+Here, we focus on improving the LLM’s ability to follow such instructions and gen-
+erate a desired response, as illustrated in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image121.png?raw=true)
+
+Preparing the dataset is a key aspect of instruction fine-tuning. Then we’ll complete
+all the steps in the three stages of the instruction fine-tuning process, beginning 
+with the dataset preparation, as shown in figure below.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image122.png?raw=true)
+
+## Preparing a dataset for supervised instruction fine-tuning
+
+Let’s download and format the instruction dataset for instruction fine-tuning a pre-
+trained LLM. The dataset consists of 1,100 instruction–response pairs similar to those in
+figure above. This dataset was created specifically for this book.
+The following code implements and executes a function to download this dataset,
+which is a relatively small file (only 204 KB) in JSON format. JSON, or JavaScript Object
+Notation, mirrors the structure of Python dictionaries, providing a simple structure
+for data interchange that is both human readable and machine friendly.
+
+```python
+import json
+import os
+import urllib
+def download_and_load_file(file_path, url):
+    if not os.path.exists(file_path):
+        with urllib.request.urlopen(url) as response:
+            text_data = response.read().decode("utf-8")
+        with open(file_path, "w", encoding="utf-8") as file:
+        file.write(text_data)
+    else:
+        with open(file_path, "r", encoding="utf-8") as file:
+            text_data = file.read()
+    with open(file_path, "r") as file:
+        data = json.load(file)
+    return data
+file_path = "instruction-data.json"
+url = (
+    "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch"
+    "/main/ch07/01_main-chapter-code/instruction-data.json"
+)
+data = download_and_load_file(file_path, url)
+print("Number of entries:", len(data))
+
+```
+The output of executing the preceding code is:
+
+Number of entries: 1100
+
+The data list that we loaded from the JSON file contains the 1,100 entries of the
+instruction dataset. Let’s print one of the entries to see how each entry is structured:
+
+The content of the example entry is
+Example entry:
+```python
+{'instruction': 'Identify the correct spelling of the following word.',
+'input': 'Ocassion', 'output': "The correct spelling is 'Occasion.'"}
+```
+As we can see, the example entries are Python dictionary objects containing an
+'instruction', 'input', and 'output'.
+
+Instruction fine-tuning involves training a model on a dataset where the input-output
+pairs, like those we extracted from the JSON file, are explicitly provided. There are
+various methods to format these entries for LLMs. Figure below illustrates two different
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image123.png?raw=true)
+
+example formats, often referred to as prompt styles, used in the training of notable
+LLMs such as Alpaca and Phi-3. 
+The rest of this chapter uses the Alpaca prompt style since it is one of the most
+popular ones, largely because it helped define the original approach to fine-tuning.
+
+Let’s define a format_input function that we can use to convert the entries in the
+data list into the Alpaca-style input format.
+
+```python
+def format_input(entry):
+    instruction_text = (
+        f"Below is an instruction that describes a task. "
+        f"Write a response that appropriately completes the request."
+        f"\n\n### Instruction:\n{entry['instruction']}"
+    )
+    input_text = (
+        f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
+    )
+    return instruction_text + input_text
+```
+
+Note that the format_input skips the optional ### Input: section if the 'input' field
+is empty, which we can test out by applying the format_input function to entry
+data[999] that we inspected earlier:
+```python
+model_input = format_input(data[999])
+desired_response = f"\n\n### Response:\n{data[999]['output']}"
+print(model_input + desired_response)
+```
+The output shows that entries with an empty 'input' field don’t contain an ###
+Input: section in the formatted input:
+```python
+Below is an instruction that describes a task. Write a response that
+appropriately completes the request.
+### Instruction:
+What is an antonym of 'complicated'?
+### Response:
+An antonym of 'complicated' is 'simple'.
+```
+Before we move on to setting up the PyTorch data loaders in the next section, let’s
+divide the dataset into training, validation, and test sets analogous to what we have
+done with the spam classification dataset in the previous chapter. The following listing
+shows how we calculate the portions.
+
+```python
+train_portion = int(len(data) * 0.85)
+test_portion = int(len(data) * 0.1)
+val_portion = len(data) - train_portion - test_portion
+
+train_data = data[:train_portion]
+test_data = data[train_portion:train_portion + test_portion]
+val_data = data[train_portion + test_portion:]
+
+print("Training set length:", len(train_data))
+print("Validation set length:", len(val_data))
+print("Test set length:", len(test_data))
+```
+This partitioning results in the following dataset sizes:
+
+Training set length: 935
+Validation set length: 55
+Test set length: 110
+Next, we focus on developing the method for constructing the training batches for fine-tuning the LLM.
