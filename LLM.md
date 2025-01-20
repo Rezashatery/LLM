@@ -5357,3 +5357,131 @@ ure below, allows the LLM to learn how to predict the next token in a sequence.
 
 The following updated collate function generates the target token IDs from the input
 token IDs:
+
+
+```python
+def custom_collate_draft_2(
+    batch,
+    pad_token_id=50256,
+    device="cpu"
+    ):
+    batch_max_length = max(len(item)+1 for item in batch)
+    inputs_lst, targets_lst = [], []
+    for item in batch:
+        new_item = item.copy()
+        new_item += [pad_token_id]
+        padded = (
+            new_item + [pad_token_id] *
+            (batch_max_length - len(new_item))
+        )
+        inputs = torch.tensor(padded[:-1])
+        targets = torch.tensor(padded[1:])
+        inputs_lst.append(inputs)
+        targets_lst.append(targets)
+    inputs_tensor = torch.stack(inputs_lst).to(device)
+    targets_tensor = torch.stack(targets_lst).to(device)
+    return inputs_tensor, targets_tensor
+inputs, targets = custom_collate_draft_2(batch)
+print(inputs)
+print(targets)
+```
+In the next step, we assign a -100 placeholder value to all padding tokens,
+This special value allows us to exclude these padding tokens
+from contributing to the training loss calculation, ensuring that only meaningful data
+influences model learning. We will discuss this process in more detail after we imple-
+ment this modification. (When fine-tuning for classification, we did not have to worry
+about this since we only trained the model based on the last output token.)
+However, note that we retain one end-of-text token, ID 50256, in the target list, as
+depicted in figure below. Retaining it allows the LLM to learn when to generate an end-
+of-text token in response to instructions, which we use as an indicator that the gener-
+ated response is complete.
+In the following listing, we modify our custom collate function to replace tokens
+with ID 50256 with -100 in the target lists. Additionally, we introduce an allowed_
+max_length parameter to optionally limit the length of the samples. This adjustment
+will be useful if you plan to work with your own datasets that exceed the 1,024-token
+context size supported by the GPT-2 model.
+
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image130.png?raw=true)
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image131.png?raw=true)
+
+The modified collate function works as expected, altering the target list by inserting
+the token ID -100. What is the logic behind this adjustment? Let’s explore the under-
+lying purpose of this modification.
+For demonstration purposes, consider the following simple and self-contained
+example where each output logit corresponds to a potential token from the model’s
+vocabulary. Here’s how we might calculate the cross entropy loss during training when
+the model predicts a sequence of tokens, which is similar to what we did when 
+we pretrained the model and fine-tuned it for classification:
+
+```python
+logits_1 = torch.tensor(
+    [[-1.0, 1.0], #predictions for 1st token
+    [-0.5, 1.5]]  # predictions for 2nd token
+)    
+targets_1 = torch.tensor([0, 1]) # Correct token indices to generate
+loss_1 = torch.nn.functional.cross_entropy(logits_1, targets_1)
+print(loss_1)
+```
+As we would expect, adding an additional token ID affects the loss calculation:
+
+```python
+logits_1 = torch.tensor(
+    [[-1.0, 1.0], #predictions for 1st token
+    [-0.5, 1.5]  # predictions for 2nd token
+    [-0.5, 1.5]]  # New third token ID prediction  
+) 
+targets_2 = torch.tensor([0, 1, 1])
+loss_2 = torch.nn.functional.cross_entropy(logits_2, targets_2)
+print(loss_2)
+```
+After adding the third token, the loss value is 0.7936.
+So far, we have carried out some more or less obvious example calculations using
+the cross entropy loss function in PyTorch, the same loss function we used in the
+training functions for pretraining and fine-tuning for classification. Now let’s get to
+the interesting part and see what happens if we replace the third target token ID
+with -100:
+
+```python
+targets_3 = torch.tensor([0, 1, -100])
+loss_3 = torch.nn.functional.cross_entropy(logits_2, targets_3)
+print(loss_3)
+print("loss_1 == loss_3:", loss_1 == loss_3)
+```
+The resulting output is
+```python
+tensor(1.1269)
+loss_1 == loss_3: tensor(True)
+```
+The resulting loss on these three training examples is identical to the loss we calcu-
+lated from the two training examples earlier. In other words, the cross entropy loss
+function ignored the third entry in the targets_3 vector, the token ID corresponding
+to -100. (Interested readers can try to replace the -100 value with another token ID
+that is not 0 or 1; it will result in an error.)
+
+The resulting loss on these three training examples is identical to the loss we calcu-
+lated from the two training examples earlier. In other words, the cross entropy loss
+function ignored the third entry in the targets_3 vector, the token ID corresponding
+to -100. (Interested readers can try to replace the -100 value with another token ID
+that is not 0 or 1; it will result in an error.)
+So what’s so special about -100 that it’s ignored by the cross entropy loss? The
+default setting of the cross entropy function in PyTorch is cross_entropy(...,
+ignore_index=-100). This means that it ignores targets labeled with -100. We take
+advantage of this ignore_index to ignore the additional end-of-text (padding) tokens
+that we used to pad the training examples to have the same length in each batch.
+However, we want to keep one 50256 (end-of-text) token ID in the targets because it
+helps the LLM to learn to generate end-of-text tokens, which we can use as an indica-
+tor that a response is complete.
+In addition to masking out padding tokens, it is also common to mask out the tar-
+get token IDs that correspond to the instruction, as illustrated in figure below. By mask-
+ing out the LLM’s target token IDs corresponding to the instruction, the cross
+entropy loss is only computed for the generated response target IDs. Thus, the model
+is trained to focus on generating accurate responses rather than memorizing instruc-
+tions, which can help reduce overfitting.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image132.png?raw=true)
+
+Left: The formatted input text we tokenize and then feed to the LLM during training. Right: The
+target text we prepare for the LLM where we can optionally mask out the instruction section, which means
+replacing the corresponding token IDs with the -100 ignore_index value.
