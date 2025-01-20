@@ -6119,4 +6119,14 @@ a broader range of topics and styles
 - Experimenting with different prompts or instruction formats to guide the
 model’s responses more effectively
 - Using a larger pretrained model, which may have greater capacity to capture
-complex patterns and generate more accurate responses
+complex patterns and generate more accurate responses.
+
+
+## Conclusions
+This chapter marks the conclusion of our journey through the LLM development
+cycle. We have covered all the essential steps, including implementing an LLM archi-
+tecture, pretraining an LLM, and fine-tuning it for specific tasks, as summarized in fig-
+ure below. Let’s discuss some ideas for what to look into next.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image138.png?raw=true)
+
