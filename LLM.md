@@ -5235,3 +5235,125 @@ Training set length: 935
 Validation set length: 55
 Test set length: 110
 Next, we focus on developing the method for constructing the training batches for fine-tuning the LLM.
+
+## Organizing data into training batches
+As we progress into the implementation phase of our instruction fine-tuning process,
+the next step, illustrated in figure below, focuses on constructing the training batches
+effectively. This involves defining a method that will ensure our model receives the
+formatted training data during the fine-tuning process.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image124.png?raw=true)
+
+In the previous chapter, the training batches were created automatically by the PyTorch
+DataLoader class, which employs a default collate function to combine lists of samples
+into batches. A collate function is responsible for taking a list of individual data sam-
+ples and merging them into a single batch that can be processed efficiently by the
+model during training.
+
+However, the batching process for instruction fine-tuning is a bit more involved
+and requires us to create our own custom collate function that we will later plug into
+the DataLoader. We implement this custom collate function to handle the specific
+requirements and formatting of our instruction fine-tuning dataset.
+Let’s tackle the batching process in several steps, including coding the custom col-
+late function, as illustrated in figure below First, to implement steps 2.1 and 2.2, we
+code an InstructionDataset class that applies format_input and pretokenizes all
+inputs in the dataset, similar to the SpamDataset in chapter 6.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image125.png?raw=true)
+
+This two-step process,
+detailed in figure below, is implemented in the __init__ constructor method of the
+InstructionDataset.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image126.png?raw=true)
+
+```python
+import torch
+from torch.utils.data import Dataset
+class InstructionDataset(Dataset):
+    def __init__(self, data, tokenizer):
+        self.data = data
+        self.encoded_texts = []
+        for entry in data:
+            instruction_plus_input = format_input(entry)
+            response_text = f"\n\n### Response:\n{entry['output']}"
+            full_text = instruction_plus_input + response_text
+            self.encoded_texts.append(
+            tokenizer.encode(full_text)
+        )
+    def __getitem__(self, index):
+        return self.encoded_texts[index]
+    def __len__(self):
+        return len(self.data)   
+```
+Similar to the approach used for classification fine-tuning, we want to accelerate train-
+ing by collecting multiple training examples in a batch, which necessitates padding all
+inputs to a similar length. As with classification fine-tuning, we use the <|endoftext|>
+token as a padding token.
+
+Instead of appending the <|endoftext|> tokens to the text inputs, we can append
+the token ID corresponding to <|endoftext|> to the pretokenized inputs directly. We
+can use the tokenizer’s .encode method on an <|endoftext|> token to remind us
+which token ID we should use:
+```python
+import tiktoken
+tokenizer = tiktoken.get_encoding("gpt2")
+print(tokenizer.encode("<|endoftext|>", allowed_special={"<|endoftext|>"}))
+```
+The resulting token ID is 50256.
+
+Moving on to step 2.3 of the process, we adopt a more sophisti-
+cated approach by developing a custom collate function that we can pass to the data
+loader. This custom collate function pads the training examples in each batch to the
+same length while allowing different batches to have different lengths, as demon-
+strated in figure below. This approach minimizes unnecessary padding by only extending
+sequences to match the longest one in each batch, not the whole dataset.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image127.png?raw=true)
+
+We can implement the padding process with a custom collate function:
+
+```python
+def custom_collate_draft_1(
+    batch,
+    pad_token_id=50256,
+    device="cpu"
+    ):
+    batch_max_length = max(len(item)+1 for item in batch)
+    inputs_lst = []
+    for item in batch:
+        new_item = item.copy()
+        new_item += [pad_token_id]
+
+        padded = (
+          new_item + [pad_token_id] *
+          (batch_max_length - len(new_item))
+        )
+        inputs = torch.tensor(padded[:-1])
+        inputs_lst.append(inputs)
+
+    inputs_tensor = torch.stack(inputs_lst).to(device)
+    return inputs_tensor
+```
+The custom_collate_draft_1 we implemented is designed to be integrated into a
+PyTorch DataLoader, but it can also function as a standalone tool. Here, we use it
+independently to test and verify that it operates as intended.
+
+We have just implemented our first custom collate function to create batches from
+lists of inputs. However, as we previously learned, we also need to create batches with
+the target token IDs corresponding to the batch of input IDs. These target IDs, as
+shown in figure below, are crucial because they represent what we want the model to
+generate and what we need during training to calculate the loss for the weight
+updates. That is, we modify our custom collate function to return the target token IDs
+in addition to the input token IDs.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image128.png?raw=true)
+
+Similar to the process we used to pretrain an LLM, the target token IDs match the
+input token IDs but are shifted one position to the right. This setup, as shown in fig-
+ure below, allows the LLM to learn how to predict the next token in a sequence.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image129.png?raw=true)
+
+The following updated collate function generates the target token IDs from the input
+token IDs:
