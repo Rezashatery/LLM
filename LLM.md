@@ -5711,3 +5711,106 @@ original input sentence and part of the instruction, failing to convert the acti
 tence to passive voice as requested. So, let’s now implement the fine-tuning process
 to improve the model’s ability to comprehend and appropriately respond to such
 requests.
+
+
+
+## Fine-tuning the LLM on instruction data
+It’s time to fine-tune the LLM for instructions (figure 7.16). We will take the loaded
+pretrained model in the previous section and further train it using the previously pre-
+pared instruction dataset prepared earlier in this chapter. We already did all the hard
+work when we implemented the instruction dataset processing at the beginning of this chapter.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image134.png?raw=true)
+
+For the fine-tuning process itself, we can reuse the loss calculation and
+training functions implemented in previous chapter05
+
+```python
+from chapter05 import (
+    calc_loss_loader,
+    train_model_simple
+)
+```
+Before we begin training, let’s calculate the initial loss for the training and valida-
+tion sets:
+
+```python
+model.to(device)
+torch.manual_seed(123)
+with torch.no_grad():
+    train_loss = calc_loss_loader(
+        train_loader, model, device, num_batches=5
+    )
+    val_loss = calc_loss_loader(
+        val_loader, model, device, num_batches=5
+)
+print("Training loss:", train_loss)
+print("Validation loss:", val_loss)
+```
+The initial loss values are as follows; as previously, our goal is to minimize the loss:
+
+Training loss: 3.825908660888672
+Validation loss: 3.7619335651397705
+
+With the model and data loaders prepared, we can now proceed to train the model.
+The code in below sets up the training process, including initializing the opti-
+mizer, setting the number of epochs, and defining the evaluation frequency and start-
+ing context to evaluate generated LLM responses during training based on the first
+validation set instruction (val_data[0]).
+
+```python
+import time
+start_time = time.time()
+torch.manual_seed(123)
+optimizer = torch.optim.AdamW(
+    model.parameters(), lr=0.00005, weight_decay=0.1
+)
+num_epochs = 2
+train_losses, val_losses, tokens_seen = train_model_simple(
+    model, train_loader, val_loader, optimizer, device,
+    num_epochs=num_epochs, eval_freq=5, eval_iter=5,
+    start_context=format_input(val_data[0]), tokenizer=tokenizer
+)
+end_time = time.time()
+execution_time_minutes = (end_time - start_time) / 60
+print(f"Training completed in {execution_time_minutes:.2f} minutes.")
+```
+
+The following output displays the training progress over two epochs, where a steady
+decrease in losses indicates improving ability to follow instructions and generate
+appropriate responses.
+
+The training output shows that the model is learning effectively, as we can tell based
+on the consistently decreasing training and validation loss values over the two epochs.
+This result suggests that the model is gradually improving its ability to understand and
+follow the provided instructions. (Since the model demonstrated effective learning
+within these two epochs, extending the training to a third epoch or more is not essen-
+tial and may even be counterproductive as it could lead to increased overfitting.)
+Moreover, the generated responses at the end of each epoch let us inspect the
+model’s progress in correctly executing the given task in the validation set example. In
+this case, the model successfully converts the active sentence "The chef cooks the
+meal every day." into its passive voice counterpart: "The meal is cooked every day by
+the chef."
+We will revisit and evaluate the response quality of the model in more detail later.
+For now, let’s examine the training and validation loss curves to gain additional
+insights into the model’s learning process. For this, we use the same plot_losses
+function we used for pretraining:
+
+```python
+epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))
+plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses)
+```
+From the loss plot shown in figure below, we can see that the model’s performance on
+both the training and validation sets improves substantially over the course of train-
+ing. The rapid decrease in losses during the initial phase indicates that the model
+quickly learns meaningful patterns and representations from the data. Then, as train-
+ing progresses to the second epoch, the losses continue to decrease but at a slower
+rate, suggesting that the model is fine-tuning its learned representations and converg-
+ing to a stable solution.
+
+![alt text](https://github.com/Rezashatery/LLM/blob/main/image135.png?raw=true)
+
+While the loss plot in figure above indicates that the model is training effectively, the
+most crucial aspect is its performance in terms of response quality and correctness.
+So, next, let’s extract the responses and store them in a format that allows us to evalu-
+ate and quantify the response quality.
